@@ -1,14 +1,25 @@
 """MCPServer wrapper exposing the chAIn tools to agents.
 
-Default transport is stdio (the agent spawns this as a local subprocess — the
-process boundary is the auth, matching the localhost/SSH-tunnel model). For an
-HTTP transport, bind to 127.0.0.1 and put a bearer token in front
-(server.run_streamable_http_async with auth); do not expose it on the LAN.
+Transport is selected by CHAIN_MCP_TRANSPORT:
+
+- "stdio" (default): the agent spawns this as a local subprocess; the process
+  boundary is the auth (localhost / SSH-tunnel model).
+- "http" (streamable-http): a long-running listener for remote/LAN agents.
+  Configure with CHAIN_MCP_HOST / CHAIN_MCP_PORT / CHAIN_MCP_PATH. On a
+  non-loopback bind, set CHAIN_MCP_TOKEN so clients must send
+  "Authorization: Bearer <token>" — the write tools are propose-only, but a
+  token still keeps the project read/propose surface off the open LAN.
+
+DNS-rebinding protection blocks non-localhost Host headers unless the host is
+allowlisted; see _transport_security().
 """
 
 from __future__ import annotations
 
+import os
+
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
 from .. import db
 from . import tools
@@ -123,9 +134,80 @@ def build_server() -> MCPServer:
     return server
 
 
+_LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", ""}
+
+
+def _transport_security(host: str) -> TransportSecuritySettings | None:
+    """Host-header policy for the HTTP transport.
+
+    An explicit CHAIN_MCP_ALLOWED_HOSTS list is honoured as-is. Otherwise a
+    non-loopback bind is treated as a deliberate trusted-LAN exposure and the
+    Host check is relaxed (the owner's model: traffic rides a trusted
+    VPN/LAN). A loopback bind keeps the library default (localhost-only).
+    """
+    allowed = os.environ.get("CHAIN_MCP_ALLOWED_HOSTS", "").strip()
+    if allowed:
+        hosts = [h.strip() for h in allowed.split(",") if h.strip()]
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=hosts,
+            allowed_origins=hosts,
+        )
+    if host not in _LOCAL_HOSTS:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    return None
+
+
+class _BearerGuard:
+    """Minimal ASGI gate: every HTTP request must carry the bearer token."""
+
+    def __init__(self, app, token: str) -> None:
+        self.app = app
+        self._expected = f"Bearer {token}".encode()
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers") or [])
+            if headers.get(b"authorization") != self._expected:
+                await send({
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": b'{"error":"unauthorized"}',
+                })
+                return
+        await self.app(scope, receive, send)
+
+
+def _run_http(server: MCPServer) -> None:
+    import uvicorn
+
+    host = os.environ.get("CHAIN_MCP_HOST", "127.0.0.1")
+    port = int(os.environ.get("CHAIN_MCP_PORT", "8799"))
+    path = os.environ.get("CHAIN_MCP_PATH", "/mcp")
+    token = os.environ.get("CHAIN_MCP_TOKEN") or None
+
+    app = server.streamable_http_app(
+        streamable_http_path=path,
+        transport_security=_transport_security(host),
+        host=host,
+    )
+    if token:
+        app = _BearerGuard(app, token)
+    uvicorn.run(app, host=host, port=port)
+
+
 def main() -> None:
     db.ensure()
-    build_server().run()  # stdio by default
+    server = build_server()
+    transport = os.environ.get("CHAIN_MCP_TRANSPORT", "stdio").strip().lower()
+    if transport in ("http", "streamable-http", "streamable_http"):
+        _run_http(server)
+    else:
+        server.run()  # stdio
 
 
 if __name__ == "__main__":
