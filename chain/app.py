@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from . import audit, cvss, db, export, findings, jobq, ops
+from . import audit, cve, cvss, db, export, findings, jobq, ops
 from .chains import graph as chains_graph
 from .import_ import import_surface
 from .checks import jobs as check_jobs
@@ -743,6 +743,21 @@ def generate_service_matrix(target_id: int):
             ref=f"created={created} analyzed={analyzed}",
         )
         return {"created": created, "analyzed": analyzed}
+    finally:
+        s.close()
+
+
+@app.post("/targets/{target_id}/service-matrix/cve")
+async def enrich_service_cve(target_id: int):
+    from .recon.runner import ToolRunner
+
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        result = await cve.enrich_service_version_cves(s, target_id, ToolRunner())
+        audit.record(s, action="service_matrix.cve", target_id=target_id, ref=f"updated={result['updated']}")
+        return result
     finally:
         s.close()
 

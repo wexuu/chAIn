@@ -56,5 +56,9 @@ class Settings:
     # Optional UI/API token auth. None (default) = open (trusted network).
     ui_auth_token: str | None = os.environ.get("CHAIN_UI_TOKEN") or None
 
+    # CVE enrichment: searchsploit is always used (offline); also query vulnx
+    # (cloud, free key/keyless) when enabled and reachable. Gracefully skipped if absent.
+    cve_online_enabled: bool = os.environ.get("CHAIN_CVE_ONLINE", "true").lower() in ("1", "true", "yes")
+
 
 settings = Settings()
