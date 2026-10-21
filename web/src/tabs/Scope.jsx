@@ -85,33 +85,42 @@ function Targets({ targets, selectedId, onSelect }) {
       ) : (
         <ul className="target-list">
           {list.map((t) => (
-            <li key={t.id} className="machine-row">
+            <li
+              key={t.id}
+              className={`machine-row ${t.id === selectedId ? 'machine-row-active' : ''}`}
+            >
               <button
-                className={`machine-select ${t.id === selectedId ? 'machine-select-active' : ''}`}
+                type="button"
+                className="machine-select"
                 onClick={() => onSelect(t.id)}
+                aria-pressed={t.id === selectedId}
+                title={`select ${t.name}`}
               >
                 <span className="target-name">{t.name}</span>
                 <span className="mono-sm muted target-addr">{t.address || 'no address'}</span>
               </button>
-              <div className="machine-boxes">
+              <div className="machine-controls">
                 <span
-                  className="sqbox"
-                  data-authz={t.authorized ? 'yes' : 'no'}
+                  className={`chip ${t.authorized ? 'chip-ok' : 'chip-warn'}`}
                   title={t.authorized ? 'authorized' : 'not authorized'}
                 >
-                  {t.authorized ? 'A' : 'U'}
+                  {t.authorized ? 'authz' : 'unauthz'}
                 </span>
                 <button
-                  className="sqbox sqbox-btn"
+                  type="button"
+                  className="machine-ctrl"
                   title="archive"
+                  aria-label={`archive ${t.name}`}
                   disabled={row.busy}
                   onClick={() => archive(t)}
                 >
                   ⇩
                 </button>
                 <button
-                  className="sqbox sqbox-btn danger"
+                  type="button"
+                  className="machine-ctrl danger"
                   title="delete"
+                  aria-label={`delete ${t.name}`}
                   disabled={row.busy}
                   onClick={() => remove(t)}
                 >

@@ -9,7 +9,8 @@
   --line-2: #454f5d;
   --fg: #e7eaf0;
   --fg-dim: #9aa4b3;
-  --fg-faint: #6b7584;
+  /* lifted from #6b7584 for AA-level legibility of small secondary text */
+  --fg-faint: #8b94a3;
   --accent: #f6873a;
   --accent-soft: #3a2614;
   --accent-2: #e2a65f;
@@ -60,6 +61,15 @@ h4 {
 
 a {
   color: var(--accent-2);
+}
+
+/* visible keyboard focus ring for interactive controls (inputs/selects keep
+   their accent-border focus below; these have no other indicator otherwise) */
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .mono-sm {
@@ -162,7 +172,7 @@ a {
   font-weight: 600;
 }
 .tab:disabled {
-  opacity: 0.35;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 
@@ -312,6 +322,10 @@ textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
+::placeholder {
+  color: var(--fg-faint);
+  opacity: 1;
+}
 textarea {
   resize: vertical;
 }
@@ -347,7 +361,7 @@ textarea.code,
   border-color: var(--accent);
 }
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 .btn-primary {
@@ -542,6 +556,7 @@ textarea.code,
   padding: 4px 8px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
+  overflow-wrap: break-word;
 }
 .data-table thead th {
   color: var(--fg-dim);
@@ -1509,10 +1524,24 @@ textarea.code,
 }
 
 /* ---------- machine list rows ---------- */
+/* Each machine is ONE bordered card: the name/address is the clickable
+   "select" target on the left; the authz chip + archive + delete controls sit
+   inline on the right, inside the same card. */
 .machine-row {
   display: flex;
   align-items: stretch;
-  gap: 6px;
+  gap: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.machine-row:hover {
+  border-color: var(--line-2);
+}
+.machine-row-active {
+  border-color: var(--accent);
+  background: var(--bg-3);
 }
 .machine-select {
   flex: 1;
@@ -1521,64 +1550,54 @@ textarea.code,
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 7px 10px;
   cursor: pointer;
   color: var(--fg);
   font-family: inherit;
   text-align: left;
 }
-.machine-select:hover {
-  border-color: var(--line-2);
+.machine-select .target-name {
+  max-width: 100%;
+  font-weight: 600;
 }
-.machine-select-active {
-  border-color: var(--accent);
-  background: var(--bg-3);
-}
-.machine-boxes {
+.machine-controls {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 2px;
+  flex: 0 0 auto;
 }
-.sqbox {
-  width: 30px;
-  align-self: stretch;
-  min-height: 30px;
+.machine-ctrl {
+  width: 26px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
-  border: 1px solid var(--line-2);
-  background: var(--bg-3);
-  font-size: 13px;
-  font-weight: 700;
   color: var(--fg-dim);
-}
-.sqbox-btn {
   cursor: pointer;
   font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
 }
-.sqbox-btn:hover:not(:disabled) {
-  border-color: var(--accent);
+.machine-ctrl:hover:not(:disabled) {
   color: var(--fg);
+  border-color: var(--line-2);
+  background: var(--bg-2);
 }
-.sqbox-btn.danger:hover:not(:disabled) {
+.machine-ctrl.danger:hover:not(:disabled) {
+  color: #ff8d96;
   border-color: var(--danger);
-  color: var(--danger);
+  background: #3a1518;
 }
-.sqbox-btn:disabled {
-  opacity: 0.45;
+.machine-ctrl:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
-}
-.sqbox[data-authz="yes"] {
-  color: var(--ok);
-  border-color: var(--ok);
-}
-.sqbox[data-authz="no"] {
-  color: var(--warn);
-  border-color: var(--warn);
 }
 
 /* ---------- archive / danger ---------- */

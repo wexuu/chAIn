@@ -54,10 +54,10 @@ export default function RefPicker({ target, title = 'Pick reference', onPick, on
       }
     >
       <div className="segmented">
-        <button className={mode === 'cell' ? 'seg-active' : ''} onClick={() => setMode('cell')}>
+        <button type="button" className={mode === 'cell' ? 'seg-active' : ''} onClick={() => setMode('cell')}>
           Cells
         </button>
-        <button className={mode === 'hyp' ? 'seg-active' : ''} onClick={() => setMode('hyp')}>
+        <button type="button" className={mode === 'hyp' ? 'seg-active' : ''} onClick={() => setMode('hyp')}>
           Hypotheses
         </button>
       </div>
