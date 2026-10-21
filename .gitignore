@@ -10,6 +10,8 @@ __pycache__/
 
 # local, unencrypted runtime data (per owner: trusted VM)
 *.db
+*.db-wal
+*.db-shm
 evidence/
 
 # frontend build artifacts
