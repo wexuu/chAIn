@@ -36,7 +36,7 @@ def test_generate_and_fetch_matrix(client):
     assert r.json()["created"] > 0
 
     m = client.get(f"/targets/{tid}/matrix").json()
-    assert len(m["columns"]) == 13
+    assert len(m["columns"]) == 14
     assert len(m["endpoints"]) == 1
     assert m["summary"]["coverage_pct"] == 0.0
 

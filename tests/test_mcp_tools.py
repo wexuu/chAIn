@@ -44,7 +44,7 @@ def test_generate_rows_and_matrix(session):
     out = tools.generate_rows(session, t.id)
     assert out["created"] == 0
     m = tools.get_matrix(session, t.id)
-    assert len(m["columns"]) == 13
+    assert len(m["columns"]) == 14
 
 
 def test_propose_chain_lands_proposed_from_agent(session):

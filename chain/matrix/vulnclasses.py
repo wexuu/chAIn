@@ -29,6 +29,7 @@ VULN_CLASSES = [
     ("rate_limiting", "Rate limiting / anti-automation", ["WSTG-BUSL-05", "OWASP-API4"], False),
     ("info_disclosure", "Information disclosure", ["WSTG-INFO-02", "WSTG-ERRH-01"], False),
     ("headers_cors", "Security headers / CSP / CORS", ["WSTG-CONF-07", "WSTG-CLNT-07"], False),
+    ("tls", "TLS / transport security", ["WSTG-CRYP-01"], False),
 ]
 
 

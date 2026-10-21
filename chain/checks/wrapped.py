@@ -73,6 +73,34 @@ def parse_nuclei(stdout: str) -> tuple[str, str]:
     return "tested_negative", "nuclei: no template match"
 
 
+def parse_sstimap(stdout: str) -> tuple[str, str]:
+    low = stdout.lower()
+    if any(m in low for m in ("could not find", "couldn't find", "no injection")):
+        return "tested_negative", "SSTImap: no injection point"
+    if "injection point" in low or "engine:" in low:
+        return "candidate", "SSTImap: template injection point found"
+    return "tested_negative", "SSTImap: no injection point"
+
+
+def parse_testssl(stdout: str) -> tuple[str, str]:
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return "tested_negative", "testssl: no parseable output"
+    items = data if isinstance(data, list) else data.get("scanResult", []) or []
+    hits = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        if (it.get("severity") or "").upper() in ("HIGH", "CRITICAL"):
+            label = it.get("id") or (it.get("finding") or "")[:40]
+            cve = it.get("cve")
+            hits.append(f"{label}({cve})" if cve else label)
+    if hits:
+        return "candidate", "testssl HIGH/CRITICAL: " + ", ".join(hits[:5])
+    return "tested_negative", "testssl: no HIGH/CRITICAL findings"
+
+
 # --- adapters per vuln class -----------------------------------------------
 
 
@@ -97,12 +125,23 @@ def _nuclei_argv(tags):
     return build
 
 
+def _sstimap_argv(url, param):
+    # SSTImap auto-detects the injectable parameter; url already carries a seed value.
+    return ["sstimap", "-u", url]
+
+
+def _testssl_argv(url, param):
+    # JSON (flat) to stdout so the runner captures it; host/port taken from the URL.
+    return ["testssl", "--jsonfile", "/dev/stdout", "--quiet", "--severity", "LOW", url]
+
+
 ADAPTERS: dict[str, Adapter] = {
     "sqli": Adapter("sqlmap", _sqlmap_argv, parse_sqlmap),
     "xss": Adapter("dalfox", _dalfox_argv, parse_dalfox),
-    "ssti": Adapter("nuclei", _nuclei_argv("ssti"), parse_nuclei),
+    "ssti": Adapter("sstimap", _sstimap_argv, parse_sstimap),
     "cmdi": Adapter("nuclei", _nuclei_argv("rce,cmdi"), parse_nuclei),
     "path_traversal": Adapter("nuclei", _nuclei_argv("lfi,fileupload"), parse_nuclei),
+    "tls": Adapter("testssl", _testssl_argv, parse_testssl),
 }
 
 

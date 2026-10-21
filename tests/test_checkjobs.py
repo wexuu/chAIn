@@ -54,8 +54,8 @@ def test_create_job_only_for_wrapped_classes(session):
     t = _target(session)
     job = jobs.create_check_job(session, t.id)
     tools = {task.tool for task in job.tasks}
-    # sqli->sqlmap, xss->dalfox, ssti/cmdi/path->nuclei; no task for authz/headers/etc.
-    assert tools <= {"sqlmap", "dalfox", "nuclei"}
+    # sqli->sqlmap, xss->dalfox, ssti->sstimap, cmdi/path->nuclei, tls->testssl; none for authz/headers.
+    assert tools <= {"sqlmap", "dalfox", "nuclei", "sstimap", "testssl"}
     assert "sqlmap" in tools
 
 
