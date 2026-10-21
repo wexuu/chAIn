@@ -1,6 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { get, post } from '../api.js'
-import { Button, Empty, ErrorText, Field, Loading, Panel, useAction, useAsync } from '../ui.jsx'
+import {
+  Button,
+  Empty,
+  ErrorText,
+  Field,
+  Loading,
+  Panel,
+  TabIntro,
+  useAction,
+  useAsync,
+} from '../ui.jsx'
+
+const TIER_ORDER = ['quick', 'thorough']
+const TIER_LABEL = { quick: 'Quick (fast, start poking)', thorough: 'Thorough (deep, slower)' }
 
 export default function Recon({ target }) {
   const coverage = useAsync(() => get(`/targets/${target.id}/recon-coverage`), [target.id])
@@ -8,70 +21,133 @@ export default function Recon({ target }) {
   const [job, setJob] = useState(null)
 
   return (
-    <div className="tab-grid">
-      <StartJob
-        target={target}
-        onStarted={(j) => setJob(j)}
-        onDone={() => {
-          coverage.reload()
-          subs.reload()
-        }}
+    <div className="tab-intro-wrap">
+      <TabIntro
+        title="Recon"
+        lead="Pick the discovery tasks to run against a host, then launch. nmap seeds the hosts, services and a root endpoint for every web port; httpx/ffuf/katana add more endpoints. Anything high-importance you skip is flagged below as a gap."
       />
-      {job && <JobStatus target={target} job={job} onSettled={() => coverage.reload()} />}
-      <Coverage coverage={coverage} />
-      <Subdomains target={target} subs={subs} />
+      <div className="tab-grid">
+        <StartJob
+          target={target}
+          onStarted={(j) => setJob(j)}
+          onDone={() => {
+            coverage.reload()
+            subs.reload()
+          }}
+        />
+        {job && <JobStatus target={target} job={job} onSettled={() => coverage.reload()} />}
+        <Coverage coverage={coverage} />
+        <Subdomains target={target} subs={subs} />
+      </div>
     </div>
   )
 }
 
-function StartJob({ target, onStarted, onDone }) {
-  const [tier, setTier] = useState('quick')
+function StartJob({ target, onStarted }) {
+  const catalog = useAsync(() => get('/recon/catalog'), [])
+  const preflight = useAsync(() => get('/preflight'), [])
   const [host, setHost] = useState('')
-  const [keys, setKeys] = useState('')
+  const [checked, setChecked] = useState(null) // Set of keys, or null until catalog loads
   const { busy, error, run } = useAction()
+
+  const tasks = useMemo(() => catalog.data || [], [catalog.data])
+  const toolsAvailable = preflight.data?.tools || {}
+
+  // Initialise the checkbox state from each task's default once the catalog loads.
+  useEffect(() => {
+    if (tasks.length && checked === null) {
+      setChecked(new Set(tasks.filter((t) => t.default_selected).map((t) => t.key)))
+    }
+  }, [tasks, checked])
+
+  const sel = checked || new Set()
+  const toggle = (key) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+
+  const preset = (fn) => setChecked(new Set(tasks.filter(fn).map((t) => t.key)))
+
+  const byTier = useMemo(() => {
+    const m = {}
+    for (const t of tasks) (m[t.tier] ||= []).push(t)
+    return m
+  }, [tasks])
 
   const submit = async (e) => {
     e.preventDefault()
-    const body = { tier, host: host.trim() }
-    const k = keys.split(',').map((s) => s.trim()).filter(Boolean)
-    if (k.length) body.keys = k
-    const j = await run(() => post(`/targets/${target.id}/recon`, body))
+    const keys = [...sel]
+    // tier is derived: thorough if any thorough task is selected.
+    const tier = keys.some((k) => tasks.find((t) => t.key === k)?.tier === 'thorough')
+      ? 'thorough'
+      : 'quick'
+    const j = await run(() => post(`/targets/${target.id}/recon`, { tier, host: host.trim(), keys }))
     onStarted(j)
   }
 
   return (
     <Panel title="Start recon">
       <form onSubmit={submit} className="stack">
-        <div className="row wrap">
-          <Field label="Tier">
-            <select value={tier} onChange={(e) => setTier(e.target.value)}>
-              <option value="quick">quick</option>
-              <option value="thorough">thorough</option>
-            </select>
-          </Field>
-          <Field label="Host">
-            <input
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="target.example.com"
-              spellCheck={false}
-            />
-          </Field>
-        </div>
-        <Field label="Task keys" hint="(optional, comma-separated)">
+        <Field label="Host" hint="hostname or IP to scan">
           <input
-            value={keys}
-            onChange={(e) => setKeys(e.target.value)}
-            placeholder="subdomains,ports,http-fingerprint"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="target.example.com / 10.10.11.42"
             spellCheck={false}
           />
         </Field>
+
+        <div className="checklist-head">
+          <span className="field-label">Tasks</span>
+          <div className="preset-row">
+            <button type="button" className="link-btn" onClick={() => preset((t) => t.tier === 'quick')}>
+              quick
+            </button>
+            <button type="button" className="link-btn" onClick={() => preset(() => true)}>
+              all
+            </button>
+            <button type="button" className="link-btn" onClick={() => preset(() => false)}>
+              none
+            </button>
+          </div>
+        </div>
+
+        <ErrorText error={catalog.error || preflight.error} />
+        {catalog.loading && !tasks.length ? (
+          <Loading what="task catalog" />
+        ) : (
+          TIER_ORDER.filter((tier) => byTier[tier]?.length).map((tier) => (
+            <div key={tier} className="checkgroup">
+              <div className="checkgroup-title">{TIER_LABEL[tier] || tier}</div>
+              {byTier[tier].map((t) => {
+                const missing = toolsAvailable[t.tool] === false
+                return (
+                  <label key={t.key} className={`checkitem ${missing ? 'checkitem-missing' : ''}`}>
+                    <input type="checkbox" checked={sel.has(t.key)} onChange={() => toggle(t.key)} />
+                    <span className="checkitem-main">
+                      <span className="checkitem-label">
+                        {t.label}
+                        {t.importance === 'high' && <span className="chip chip-tiny">high</span>}
+                        {missing && (
+                          <span className="chip chip-warn chip-tiny" title={`${t.tool} not installed`}>
+                            {t.tool} missing
+                          </span>
+                        )}
+                      </span>
+                      <span className="checkitem-hint">{t.could_yield}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          ))
+        )}
+
         <div className="row">
-          <Button variant="primary" type="submit" disabled={busy || !host.trim()}>
-            start job
-          </Button>
-          <Button variant="ghost" type="button" onClick={onDone}>
-            refresh coverage
+          <Button variant="primary" type="submit" disabled={busy || !host.trim() || sel.size === 0}>
+            {busy ? 'starting…' : `run ${sel.size} task${sel.size === 1 ? '' : 's'}`}
           </Button>
         </div>
         <ErrorText error={error} />
@@ -114,7 +190,10 @@ function JobStatus({ target, job, onSettled }) {
 
   const tasks = state.tasks || []
   return (
-    <Panel title={`Recon job #${jobId}`} actions={<span className="badge" data-status={state.status}>{state.status}</span>}>
+    <Panel
+      title={`Recon job #${jobId}`}
+      actions={<span className="badge" data-status={state.status}>{state.status}</span>}
+    >
       {state.error && <ErrorText error={state.error} />}
       {tasks.length === 0 ? (
         <Empty>no tasks reported</Empty>
@@ -122,9 +201,8 @@ function JobStatus({ target, job, onSettled }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>key</th>
+              <th>task</th>
               <th>status</th>
-              <th>importance</th>
               <th>note</th>
             </tr>
           </thead>
@@ -132,8 +210,11 @@ function JobStatus({ target, job, onSettled }) {
             {tasks.map((t, i) => (
               <tr key={t.key || i}>
                 <td className="mono-sm">{t.key}</td>
-                <td>{t.status}</td>
-                <td>{t.importance ?? (t.selected ? 'selected' : '')}</td>
+                <td>
+                  <span className="badge" data-status={t.status}>
+                    {t.status}
+                  </span>
+                </td>
                 <td className="muted tiny">{t.note || ''}</td>
               </tr>
             ))}
@@ -147,14 +228,7 @@ function JobStatus({ target, job, onSettled }) {
 function Coverage({ coverage }) {
   const data = coverage.data
   return (
-    <Panel
-      title="Recon coverage"
-      actions={
-        <Button variant="ghost" onClick={coverage.reload}>
-          ⟳
-        </Button>
-      }
-    >
+    <Panel title="Recon coverage" actions={<Button variant="ghost" onClick={coverage.reload}>⟳</Button>}>
       <ErrorText error={coverage.error} />
       {coverage.loading && !data ? (
         <Loading what="coverage" />
@@ -162,7 +236,7 @@ function Coverage({ coverage }) {
         <>
           {data.flagged_gaps && data.flagged_gaps.length > 0 && (
             <div className="gaps">
-              <h4>flagged gaps (high importance, not run)</h4>
+              <h4>gaps — high-importance tasks not run</h4>
               <ul>
                 {data.flagged_gaps.map((g, i) => (
                   <li key={g.key || i}>
@@ -174,18 +248,17 @@ function Coverage({ coverage }) {
               </ul>
             </div>
           )}
-          {(!data.tasks || data.tasks.length === 0) ? (
-            <Empty>no recon tasks recorded yet</Empty>
+          {!data.tasks || data.tasks.length === 0 ? (
+            <Empty>no recon tasks recorded yet — run a scan above</Empty>
           ) : (
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>key</th>
+                  <th>task</th>
                   <th>tier</th>
                   <th>status</th>
                   <th>importance</th>
-                  <th>could yield</th>
-                  <th>sel</th>
+                  <th>ran</th>
                 </tr>
               </thead>
               <tbody>
@@ -199,7 +272,6 @@ function Coverage({ coverage }) {
                       </span>
                     </td>
                     <td>{t.importance}</td>
-                    <td className="muted tiny">{t.could_yield}</td>
                     <td>{t.selected ? '✓' : ''}</td>
                   </tr>
                 ))}
@@ -213,7 +285,7 @@ function Coverage({ coverage }) {
 }
 
 function Subdomains({ target, subs }) {
-  const { busy, error, run } = useAction()
+  const { busy, run } = useAction()
   const [approving, setApproving] = useState(null)
 
   const approve = async (sub) => {
@@ -228,15 +300,8 @@ function Subdomains({ target, subs }) {
 
   const list = subs.data || []
   return (
-    <Panel
-      title="Subdomains"
-      actions={
-        <Button variant="ghost" onClick={subs.reload}>
-          ⟳
-        </Button>
-      }
-    >
-      <ErrorText error={subs.error || error} />
+    <Panel title="Subdomains" actions={<Button variant="ghost" onClick={subs.reload}>⟳</Button>}>
+      <ErrorText error={subs.error} />
       {list.length === 0 ? (
         <Empty>no subdomains discovered</Empty>
       ) : (

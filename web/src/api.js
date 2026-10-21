@@ -31,6 +31,20 @@ function formatDetail(detail, fallback) {
  *   - raw: when true, always resolve the response body as text
  * @returns parsed JSON (default), or text when the response is text/raw
  */
+// Global error sink: the ToastProvider registers here so every failed request
+// surfaces a notification, even from call sites that don't render the error.
+let errorSink = null
+export function setApiErrorSink(fn) {
+  errorSink = fn
+}
+function reportError(err, info) {
+  try {
+    errorSink && errorSink(err, info)
+  } catch {
+    /* never let the sink break the caller */
+  }
+}
+
 export async function api(path, opts = {}) {
   const { method = 'GET', body, raw = false } = opts
   const init = { method, headers: { Accept: 'application/json, text/plain, */*' } }
@@ -43,7 +57,11 @@ export async function api(path, opts = {}) {
   try {
     res = await fetch(path, init)
   } catch (networkErr) {
-    throw new Error(`network error: ${networkErr.message || networkErr} (is the chAIn server running?)`)
+    const err = new Error(
+      `network error: ${networkErr.message || networkErr} (is the chAIn server running?)`
+    )
+    reportError(err, { path, method })
+    throw err
   }
 
   const ctype = res.headers.get('content-type') || ''
@@ -73,6 +91,7 @@ export async function api(path, opts = {}) {
     const err = new Error(msg)
     err.status = res.status
     err.body = data
+    reportError(err, { path, method })
     throw err
   }
   return data

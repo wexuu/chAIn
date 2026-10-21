@@ -108,6 +108,25 @@ def preflight():
     return ops.tool_preflight()
 
 
+@app.get("/recon/catalog")
+def recon_catalog():
+    """Static catalog of recon tasks, for the Recon checklist UI."""
+    from .recon.catalog import CATALOG
+
+    return [
+        {
+            "key": s.key,
+            "label": s.label,
+            "tier": s.tier,
+            "importance": s.importance,
+            "could_yield": s.could_yield,
+            "tool": s.tool,
+            "default_selected": s.default_selected,
+        }
+        for s in CATALOG.values()
+    ]
+
+
 # Serve the built React SPA at /app when present (built by `npm run build` in web/);
 # the no-build static page at / is always the fallback.
 _SPA_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")

@@ -53,6 +53,14 @@ def ingest_nmap(session: Session, target_id: int, records: list, host: str) -> N
                 is_http=svc.get("is_http", False),
                 scripts=svc.get("scripts"),
             )
+            # Bridge: a detected HTTP service becomes a root endpoint so the
+            # matrix has rows straight after a port scan — without waiting on
+            # httpx/ffuf/katana (which may be skipped, fail, or miss a
+            # non-standard port). Dedupes with anything those tools add later.
+            if svc.get("is_http"):
+                upsert_endpoint(
+                    session, target_id, method="GET", path="/", host_id=h.id, source="nmap"
+                )
 
 
 def ingest_httpx(session: Session, target_id: int, records: list, host: str) -> None:

@@ -72,3 +72,26 @@ def test_service_upsert_dedupes(session):
     assert len(h.services) == 1
     assert h.services[0].version == "1.1"
     assert h.services[0].is_http is True
+
+
+def test_nmap_ingest_bridges_http_service_to_endpoint(session):
+    """A detected HTTP service must seed a root endpoint, even without httpx."""
+    from chain.recon.catalog import ingest_nmap
+
+    tid = _target(session)
+    records = [
+        {
+            "ip": "10.10.11.42",
+            "hostname": "box",
+            "services": [
+                {"port": 22, "name": "ssh", "is_http": False},
+                {"port": 8080, "name": "http-alt", "is_http": True},
+            ],
+        }
+    ]
+    ingest_nmap(session, tid, records, "box")
+    session.commit()
+    eps = session.query(Endpoint).all()
+    # only the HTTP service becomes an endpoint; ssh does not
+    assert len(eps) == 1
+    assert eps[0].method == "GET" and eps[0].path == "/" and eps[0].source == "nmap"

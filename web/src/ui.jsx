@@ -1,4 +1,74 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { setApiErrorSink } from './api.js'
+
+// ---- toast notifications (bottom-left, auto-dismiss) ----------------------
+const ToastCtx = createContext(null)
+
+export function useToast() {
+  return useContext(ToastCtx) || { push: () => {}, dismiss: () => {} }
+}
+
+let _toastSeq = 0
+
+export function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([])
+  const timers = useRef({})
+
+  const dismiss = useCallback((id) => {
+    setToasts((list) => list.filter((t) => t.id !== id))
+    clearTimeout(timers.current[id])
+    delete timers.current[id]
+  }, [])
+
+  const push = useCallback(
+    (message, opts = {}) => {
+      const id = ++_toastSeq
+      const toast = {
+        id,
+        message: String(message || 'something went wrong'),
+        kind: opts.kind || 'error',
+        detail: opts.detail || null,
+      }
+      setToasts((list) => [...list, toast])
+      timers.current[id] = setTimeout(() => dismiss(id), opts.duration || 10000)
+      return id
+    },
+    [dismiss]
+  )
+
+  // Route every failed API request to a toast.
+  useEffect(() => {
+    setApiErrorSink((err, info) =>
+      push(err.message || String(err), {
+        kind: 'error',
+        detail: info ? `${info.method} ${info.path}` : null,
+      })
+    )
+    return () => setApiErrorSink(null)
+  }, [push])
+
+  // Clean up timers on unmount.
+  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), [])
+
+  return (
+    <ToastCtx.Provider value={{ push, dismiss }}>
+      {children}
+      <div className="toast-wrap" aria-live="polite" aria-atomic="false">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast" data-kind={t.kind} role="status">
+            <div className="toast-body">
+              <span className="toast-msg">{t.message}</span>
+              {t.detail && <span className="toast-detail mono-sm">{t.detail}</span>}
+            </div>
+            <button className="toast-x" onClick={() => dismiss(t.id)} aria-label="dismiss">
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </ToastCtx.Provider>
+  )
+}
 
 // ---- matrix cell status model -------------------------------------------
 export const CELL_STATUSES = [
@@ -173,6 +243,18 @@ export function KV({ k, v }) {
     <div className="kv">
       <span className="kv-k">{k}</span>
       <span className="kv-v">{v}</span>
+    </div>
+  )
+}
+
+// Short orienting header shown at the top of a tab: what this page is for and
+// how it fits the workflow.
+export function TabIntro({ title, lead, children }) {
+  return (
+    <div className="tab-intro">
+      <h1>{title}</h1>
+      {lead && <p>{lead}</p>}
+      {children}
     </div>
   )
 }

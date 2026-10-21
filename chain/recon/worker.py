@@ -34,7 +34,9 @@ def create_job(
     session.add(job)
     session.flush()
     for spec in CATALOG.values():
-        if spec.tier != tier:
+        # An explicit key list may span tiers (the UI checklist); without one,
+        # fall back to this tier's default-selected tasks.
+        if keys is None and spec.tier != tier:
             continue
         selected = (spec.key in keys) if keys is not None else spec.default_selected
         session.add(
