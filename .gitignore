@@ -1,0 +1,13 @@
+# Internal / working docs — not pushed. User-facing docs are authored and pushed by the owner.
+internal-docs/
+
+# Python / local runtime
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# local, unencrypted runtime data (per owner: trusted VM)
+*.db
+evidence/

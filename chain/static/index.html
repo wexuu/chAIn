@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>chAIn</title>
+<style>
+  :root { --bg:#0e1116; --panel:#161b22; --line:#2a313c; --fg:#e6edf3; --mut:#8b949e;
+          --untested:#30363d; --candidate:#9e6a03; --confirmed:#8957e5; --neg:#238636;
+          --na:#484f58; --reviewed:#1f6feb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:baseline; }
+  header b { font-size:18px; } header span { color:var(--mut); }
+  nav { display:flex; gap:4px; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav button { background:var(--panel); color:var(--fg); border:1px solid var(--line); padding:6px 12px; cursor:pointer; border-radius:6px; }
+  nav button.active { border-color:var(--reviewed); }
+  main { padding:16px; }
+  .panel { display:none; } .panel.active { display:block; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; }
+  input,select { background:var(--bg); color:var(--fg); border:1px solid var(--line); padding:6px; border-radius:6px; }
+  button.go { background:var(--reviewed); color:#fff; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; }
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  th,td { border:1px solid var(--line); padding:3px 6px; text-align:left; }
+  .cell { cursor:pointer; text-align:center; width:34px; }
+  .s-untested{background:var(--untested)} .s-candidate{background:var(--candidate)}
+  .s-confirmed{background:var(--confirmed)} .s-tested_negative{background:var(--neg)}
+  .s-not_applicable{background:var(--na);color:var(--mut)} .s-reviewed{background:var(--reviewed)}
+  .mut { color:var(--mut); } .gap { color:#f0883e; }
+  pre { white-space:pre-wrap; background:var(--bg); border:1px solid var(--line); padding:8px; border-radius:6px; max-height:60vh; overflow:auto; }
+</style>
+</head>
+<body>
+<header><b>chAIn</b><span>authorized-pentest coverage &amp; chaining — augment, don't replace</span></header>
+<nav>
+  <button data-tab="targets" class="active">Targets</button>
+  <button data-tab="recon">Recon</button>
+  <button data-tab="matrix">Matrix</button>
+  <button data-tab="chains">Chains</button>
+  <button data-tab="report">Report</button>
+</nav>
+<main>
+  <section id="targets" class="panel active">
+    <div class="card">
+      <h3>Targets</h3>
+      <input id="t-name" placeholder="target name"/> <button class="go" onclick="createTarget()">create</button>
+      <div id="t-list"></div>
+    </div>
+    <div class="card" id="t-detail"></div>
+  </section>
+
+  <section id="recon" class="panel">
+    <div class="card">
+      <h3>Recon</h3>
+      <div class="mut">Pick a target above. Insert a host; a tiered recon job is created (quick → thorough).</div>
+      <input id="r-host" placeholder="hostname (must be in scope + authorized)"/>
+      <select id="r-tier"><option value="quick">quick</option><option value="thorough">thorough</option></select>
+      <button class="go" onclick="startRecon()">start recon</button>
+      <div id="r-coverage"></div>
+    </div>
+  </section>
+
+  <section id="matrix" class="panel">
+    <div class="card">
+      <h3>Coverage matrix</h3>
+      <button class="go" onclick="genMatrix()">generate cells</button>
+      <span class="mut">click a cell to set status · an empty (untested) cell is a to-do, not a pass</span>
+      <div id="m-summary" class="mut"></div>
+      <div id="m-grid" style="overflow:auto"></div>
+    </div>
+  </section>
+
+  <section id="chains" class="panel">
+    <div class="card">
+      <h3>Chains (hypotheses)</h3>
+      <input id="c-title" placeholder="chain title, e.g. mass-assign → stored XSS"/>
+      <button class="go" onclick="createHyp()">propose</button>
+      <div id="c-list"></div>
+    </div>
+  </section>
+
+  <section id="report" class="panel">
+    <div class="card">
+      <h3>Report</h3>
+      <button class="go" onclick="loadReport()">render markdown</button>
+      <a id="r-json" class="mut" href="#" style="margin-left:8px">(json)</a>
+      <pre id="report-out" class="mut">—</pre>
+    </div>
+  </section>
+</main>
+<script>
+const api = (p,o={}) => fetch(p,{headers:{'Content-Type':'application/json'},...o}).then(r=>r.ok?r.json():r.text().then(t=>Promise.reject(t)));
+let TID = null;
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); document.getElementById(b.dataset.tab).classList.add('active');
+});
+
+async function refreshTargets(){
+  const ts = await api('/targets/list');
+  document.getElementById('t-list').innerHTML = ts.map(t=>
+    `<div><button onclick="selectTarget(${t.id},'${t.name}')">${t.id}: ${t.name}</button> ${t.authorized?'✅ authorized':'⚠️ not authorized'}</div>`).join('') || '<div class="mut">none yet</div>';
+}
+async function createTarget(){
+  const name = document.getElementById('t-name').value.trim(); if(!name) return;
+  await api('/targets',{method:'POST',body:JSON.stringify({name})}); refreshTargets();
+}
+async function selectTarget(id,name){
+  TID=id;
+  document.getElementById('t-detail').innerHTML =
+    `<h3>${name} (#${id})</h3>
+     <div><input id="sc-val" placeholder="scope host e.g. example.com"/>
+     <button class="go" onclick="addScope()">add host scope</button></div>
+     <div style="margin-top:8px"><input id="auth-note" placeholder="authorization note / RoE ref"/>
+     <button class="go" onclick="authorize()">record authorization (attestation)</button></div>`;
+}
+async function addScope(){ if(!TID)return;
+  await api(`/targets/${TID}/scope`,{method:'POST',body:JSON.stringify({kind:'host',value:document.getElementById('sc-val').value,allow:true})}); alert('scope added'); }
+async function authorize(){ if(!TID)return;
+  await api(`/targets/${TID}/authorize`,{method:'POST',body:JSON.stringify({note:document.getElementById('auth-note').value})}); refreshTargets(); alert('authorization recorded'); }
+
+async function startRecon(){ if(!TID){alert('select a target');return;}
+  const host=document.getElementById('r-host').value, tier=document.getElementById('r-tier').value;
+  try{ await api(`/targets/${TID}/recon`,{method:'POST',body:JSON.stringify({tier,host})}); }catch(e){ alert(e); }
+  loadCoverage();
+}
+async function loadCoverage(){ if(!TID)return;
+  const c=await api(`/targets/${TID}/recon-coverage`);
+  document.getElementById('r-coverage').innerHTML =
+    '<h4>recon coverage</h4>'+c.tasks.map(t=>`<div>${t.status==='done'?'✔':'·'} <b>${t.key}</b> <span class="mut">(${t.importance}, ${t.tier})</span> — ${t.status}</div>`).join('')
+    + (c.flagged_gaps.length?('<h4 class="gap">flagged gaps</h4>'+c.flagged_gaps.map(g=>`<div class="gap">⚑ ${g.key} — ${g.could_yield}</div>`).join('')):'');
+}
+
+async function genMatrix(){ if(!TID){alert('select a target');return;} await api(`/targets/${TID}/matrix/generate`,{method:'POST'}); loadMatrix(); }
+async function loadMatrix(){ if(!TID)return;
+  const m=await api(`/targets/${TID}/matrix`); const cols=m.columns;
+  const s=m.summary;
+  document.getElementById('m-summary').textContent =
+    `coverage ${s.coverage_pct}% — ${s.covered}/${s.applicable} applicable cells; ${s.by_status.untested} untested (to-do)`;
+  let h='<table><tr><th>endpoint</th>'+cols.map(c=>`<th title="${c.wstg.join(', ')}">${c.key}</th>`).join('')+'</tr>';
+  for(const ep of m.endpoints){
+    h+=`<tr><td>${ep.method} ${ep.path}</td>`;
+    for(const col of cols){
+      const cs=ep.cells.filter(x=>x.vuln_class===col.key);
+      h+='<td>'+cs.map(c=>`<span class="cell s-${c.status}" title="${c.param_name||''} ${c.reason||''}" onclick="editCell(${c.id},'${c.status}')">${c.status[0].toUpperCase()}</span>`).join(' ')+'</td>';
+    }
+    h+='</tr>';
+  }
+  document.getElementById('m-grid').innerHTML=h+'</table>';
+}
+async function editCell(id,cur){
+  const status=prompt('status: untested|candidate|confirmed|tested_negative|not_applicable|reviewed',cur); if(!status)return;
+  let reason=null; if(['tested_negative','not_applicable','reviewed'].includes(status)){ reason=prompt('reason (required)'); if(!reason)return; }
+  try{ await api(`/cells/${id}`,{method:'PATCH',body:JSON.stringify({status,reason})}); }catch(e){ alert(e); }
+  loadMatrix();
+}
+
+async function createHyp(){ if(!TID){alert('select a target');return;}
+  await api(`/targets/${TID}/hypotheses`,{method:'POST',body:JSON.stringify({title:document.getElementById('c-title').value})}); loadChains(); }
+async function loadChains(){ if(!TID)return;
+  const hs=await api(`/targets/${TID}/hypotheses`);
+  document.getElementById('c-list').innerHTML = hs.map(h=>
+    `<div><b>${h.title}</b> <span class="mut">[${h.status}] ${h.origin}</span> `+
+    (h.status!=='confirmed'&&h.status!=='rejected'?`<button onclick="promote(${h.id})">promote</button> <button onclick="promote(${h.id},'rejected')">reject</button>`:'')+`</div>`).join('') || '<div class="mut">none</div>';
+}
+async function promote(id,to){
+  if(!to){ to = prompt('promote to: validated|confirmed','validated'); if(!to)return; }
+  try{ await api(`/hypotheses/${id}/promote`,{method:'POST',body:JSON.stringify({to})}); }catch(e){ alert(e); }
+  loadChains();
+}
+
+async function loadReport(){ if(!TID){alert('select a target');return;}
+  document.getElementById('r-json').href=`/targets/${TID}/export`;
+  const md=await fetch(`/targets/${TID}/export?format=md`).then(r=>r.text());
+  document.getElementById('report-out').textContent=md;
+}
+
+document.querySelector('[data-tab="recon"]').addEventListener('click',loadCoverage);
+document.querySelector('[data-tab="matrix"]').addEventListener('click',loadMatrix);
+document.querySelector('[data-tab="chains"]').addEventListener('click',loadChains);
+refreshTargets();
+</script>
+</body>
+</html>
