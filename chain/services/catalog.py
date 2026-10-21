@@ -41,6 +41,20 @@ SCRIPT_RULES = [
 ]
 
 
+# Safe (non-brute) empty/default-password NSE scripts for the gated default-cred pass.
+# Research: only these are lockout-safe empty-password checks; postgres/telnet have
+# only brute scripts, so they get no default-cred signal. ms-sql can trip lockout
+# (SQL Server 2005+), which is why the whole pass is gated behind destructive opt-in.
+DEFAULT_CRED_SCRIPTS = ["mysql-empty-password", "ms-sql-empty-password"]
+
+# (script id substring, service keyword, reason) -> sets the unauth_access cell.
+DEFAULT_CRED_RULES = [
+    ("mysql-empty-password", "mysql", "MySQL root/anonymous account has an empty password"),
+    ("ms-sql-empty-password", "ms-sql", "MSSQL sa account has a blank password"),
+]
+_CRED_NEGATIVE = ("no accounts", "not vulnerable", "failed", "error", "no result")
+
+
 def applicable_classes(service_name: str | None) -> set[str]:
     n = (service_name or "").lower()
     for key, classes in SERVICE_CATALOG.items():

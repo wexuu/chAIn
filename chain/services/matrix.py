@@ -82,6 +82,70 @@ def analyze_services(session: Session, target_id: int) -> int:
     return touched
 
 
+class DefaultCredDenied(Exception):
+    pass
+
+
+async def run_default_cred_pass(session: Session, target_id: int, runner) -> dict:
+    """Gated safe default-credential pass: run the empty-password NSE scripts and
+    set matching services' unauth_access cell to candidate. Requires authorization
+    AND destructive opt-in (ms-sql can lock accounts). Touches the target, so it is
+    launch-gated by scope."""
+    from ..models import Target
+    from ..recon.parsers import parse_nmap_xml
+    from ..scope import policy_from_rules
+    from .catalog import DEFAULT_CRED_RULES, DEFAULT_CRED_SCRIPTS, _CRED_NEGATIVE
+
+    target = session.get(Target, target_id)
+    if target is None or not target.authorized:
+        raise DefaultCredDenied("target not authorized")
+    if not target.destructive_opt_in:
+        raise DefaultCredDenied("default-cred pass requires destructive opt-in")
+    policy = policy_from_rules(target.scope_rules)
+    unauth = session.query(ServiceVulnClass).filter_by(key="unauth_access").first()
+    if unauth is None:
+        return {"updated": 0}
+
+    updated = 0
+    for host in session.query(Host).filter_by(target_id=target_id).all():
+        hostname = host.hostname or host.ip
+        if not hostname or not policy.check(hostname, None, "/").allowed:
+            continue
+        svcs = session.query(Service).filter_by(host_id=host.id).all()
+        cred_ports = [str(s.port) for s in svcs if any(k in (s.name or "").lower() for k in ("mysql", "ms-sql", "mssql"))]
+        if not cred_ports:
+            continue
+        argv = ["nmap", "-Pn", "--script", ",".join(DEFAULT_CRED_SCRIPTS), "-p", ",".join(cred_ports), "-oX", "-", hostname]
+        try:
+            result = await runner.run(argv, 600.0)
+        except Exception:  # noqa: BLE001
+            continue
+        for rec in parse_nmap_xml(result.stdout):
+            for psvc in rec.get("services", []):
+                scripts = psvc.get("scripts", {})
+                for sub, kw, reason in DEFAULT_CRED_RULES:
+                    out = next((v for k, v in scripts.items() if sub in k), None)
+                    if out is None or any(neg in out.lower() for neg in _CRED_NEGATIVE):
+                        continue
+                    if kw not in (psvc.get("name") or "").lower():
+                        continue
+                    svc = session.query(Service).filter_by(host_id=host.id, port=psvc["port"]).first()
+                    if svc is None:
+                        continue
+                    cell = _get_cell(session, svc.id, unauth.id)
+                    if cell is None:
+                        cell = ServiceCell(service_id=svc.id, service_vuln_class_id=unauth.id)
+                        session.add(cell)
+                        session.flush()
+                    if cell.status in ("untested", "candidate"):
+                        cell.status = "candidate"
+                        cell.reason = reason
+                        cell.scope_note = (out or "")[:200]
+                        updated += 1
+    session.commit()
+    return {"updated": updated}
+
+
 def set_service_cell_status(
     session: Session, cell_id: int, status: str, reason: Optional[str] = None
 ) -> ServiceCell:

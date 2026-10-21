@@ -762,6 +762,27 @@ async def enrich_service_cve(target_id: int):
         s.close()
 
 
+@app.post("/targets/{target_id}/service-matrix/default-creds")
+async def service_default_creds(target_id: int):
+    from .recon.runner import ToolRunner
+
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        try:
+            result = await service_matrix.run_default_cred_pass(s, target_id, ToolRunner())
+        except service_matrix.DefaultCredDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+        audit.record(
+            s, action="service_matrix.default_creds", target_id=target_id,
+            ref=f"updated={result['updated']}", destructive=True,
+        )
+        return result
+    finally:
+        s.close()
+
+
 @app.get("/targets/{target_id}/service-matrix")
 def get_service_matrix(target_id: int):
     s = db.session()
