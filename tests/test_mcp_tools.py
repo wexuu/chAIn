@@ -14,7 +14,6 @@ from chain.models import (
     Hypothesis,
     Request,
     Target,
-    VulnClass,
 )
 from chain.recon.inventory import upsert_endpoint, upsert_host
 

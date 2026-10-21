@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 from urllib.parse import urlencode
 
@@ -41,7 +41,6 @@ class CheckContext:
     auth_profiles: dict  # name -> AuthProfile
     destructive_allowed: bool
     evidence_dir: Optional[str] = None
-    extra: dict = field(default_factory=dict)
 
 
 def build_url(session: Session, endpoint: Endpoint, extra_query: Optional[dict] = None) -> str:

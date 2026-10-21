@@ -1,7 +1,7 @@
 import pytest
 
 from chain import db
-from chain.models import Endpoint, Host, ScopeRule, Service, Target
+from chain.models import Host, ScopeRule, Service, Target
 from chain.recon import worker
 from chain.recon.runner import ToolResult
 from tests.test_parsers import NMAP_XML

@@ -314,3 +314,87 @@ class Finding(Base):
     remediation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="open")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+
+# --- v2: async wrapped check jobs -------------------------------------------
+
+
+class CheckJob(Base):
+    __tablename__ = "check_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+    started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    tasks: Mapped[list["CheckTask"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class CheckTask(Base):
+    __tablename__ = "check_tasks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("check_jobs.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    cell_id: Mapped[int] = mapped_column(ForeignKey("coverage_cells.id"))
+    tool: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    evidence_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+
+    job: Mapped["CheckJob"] = relationship(back_populates="tasks")
+
+
+# --- v2: service matrix (non-web services) ----------------------------------
+
+
+class ServiceVulnClass(Base):
+    __tablename__ = "service_vuln_classes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    label: Mapped[str] = mapped_column(String(255))
+
+
+class ServiceCell(Base):
+    __tablename__ = "service_cells"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
+    service_vuln_class_id: Mapped[int] = mapped_column(ForeignKey("service_vuln_classes.id"))
+    status: Mapped[str] = mapped_column(String(16), default="untested")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scope_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+# --- v2: step sequences (stateful multi-step flows) -------------------------
+
+
+class StepSequence(Base):
+    __tablename__ = "step_sequences"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    # [{name, method, path, headers, body, auth_profile, captures:[{name,kind,expr}]}]
+    steps_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
+
+
+class SequenceRun(Base):
+    __tablename__ = "sequence_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sequence_id: Mapped[int] = mapped_column(ForeignKey("step_sequences.id"))
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|done|error
+    results_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)

@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .. import egress
-from ..models import AuthProfile, CoverageCell, Endpoint, Target, VulnClass
+from ..models import CoverageCell, Endpoint, Target, VulnClass
 from . import native
 from .base import CheckContext, DestructiveBlocked, apply_auth
 

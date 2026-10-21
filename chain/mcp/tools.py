@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from .. import audit, redact
 from ..chains import graph as chains_graph
 from ..matrix import cells as matrix_cells
-from ..models import Attempt, CoverageCell, Endpoint, Finding, Host, Request, Target
+from ..models import Attempt, CoverageCell, Endpoint, Finding, Host, Request
 from ..recon import inventory
 
 AGENT = "agent:mcp"

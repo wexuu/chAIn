@@ -42,6 +42,13 @@ def apply_ruleset(ruleset: str, nft_path: str = "nft") -> dict:
     import subprocess
     import tempfile
 
+    from .config import settings
+
+    # The generator is always available; rules are written ONLY when explicitly
+    # enabled. Default is off — no firewall rules are applied on the machine.
+    if not settings.firewall_apply_enabled:
+        return {"applied": False, "dry_run": True, "reason": "disabled-by-config (generator available, apply off)"}
+
     if shutil.which(nft_path) is None:
         return {"applied": False, "dry_run": True, "reason": "nft-not-found"}
 

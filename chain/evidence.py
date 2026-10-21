@@ -6,6 +6,7 @@ at external boundaries (MCP reads / exports), not here. Size-capped + truncated.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import os
 from typing import Optional
@@ -43,6 +44,12 @@ def store_blob(
         with open(path, "wb") as fh:
             fh.write(data)
 
+    retain_until = None
+    if settings.evidence_retention_days:
+        retain_until = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            days=settings.evidence_retention_days
+        )
+
     ev = Evidence(
         target_id=target_id,
         kind=kind,
@@ -52,6 +59,7 @@ def store_blob(
         size_bytes=len(data),
         sha256=sha,
         truncated=truncated,
+        retain_until=retain_until,
     )
     session.add(ev)
     session.flush()

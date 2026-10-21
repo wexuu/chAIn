@@ -11,3 +11,7 @@ __pycache__/
 # local, unencrypted runtime data (per owner: trusted VM)
 *.db
 evidence/
+
+# frontend build artifacts
+web/node_modules/
+web/dist/

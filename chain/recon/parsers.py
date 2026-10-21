@@ -55,6 +55,11 @@ def parse_nmap_xml(xml_text: str) -> list[dict]:
             name = svc.get("name") if svc is not None else None
             product = svc.get("product") if svc is not None else None
             version = svc.get("version") if svc is not None else None
+            scripts = {}
+            for sc in port.findall("script"):
+                sid = sc.get("id")
+                if sid:
+                    scripts[sid] = sc.get("output", "")
             services.append(
                 {
                     "port": portid,
@@ -64,6 +69,7 @@ def parse_nmap_xml(xml_text: str) -> list[dict]:
                     "version": version,
                     "banner": None,
                     "is_http": _is_http(name, portid),
+                    "scripts": scripts,
                 }
             )
         hosts.append({"ip": ip, "hostname": hostname, "os_guess": os_guess, "services": services})

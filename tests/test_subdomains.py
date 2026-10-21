@@ -3,7 +3,7 @@ import json
 import pytest
 
 from chain import db
-from chain.models import Host, ScopeRule, Subdomain, Target
+from chain.models import Host, ScopeRule, Target
 from chain.recon import subdomains
 from chain.recon.inventory import upsert_subdomain
 

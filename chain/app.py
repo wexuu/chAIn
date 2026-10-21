@@ -16,8 +16,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from . import audit, cvss, db, export
+from . import audit, cvss, db, export, ops
 from .chains import graph as chains_graph
+from .import_ import import_surface
+from .checks import jobs as check_jobs
 from .checks import runner as checks_runner
 from .config import settings
 from .matrix import cells as matrix_cells
@@ -36,6 +38,9 @@ from .models import (
 from .ratelimit import RateLimiter
 from .recon import inventory, subdomains, worker
 from .scope import policy_from_rules
+from .sequences import runner as seq_runner
+from .services import matrix as service_matrix
+from .services.catalog import seed_service_classes
 
 
 @asynccontextmanager
@@ -43,14 +48,33 @@ async def lifespan(app: FastAPI):
     db.ensure()
     s = db.session()
     try:
-        worker.recover_stale(s)  # fail any jobs/tasks left running by a crash
-        seed_vuln_classes(s)  # idempotent column seed
+        worker.recover_stale(s)  # fail any recon jobs/tasks left running by a crash
+        check_jobs.recover_stale_checks(s)  # same for wrapped-check jobs
+        seed_vuln_classes(s)  # idempotent web-matrix column seed
+        seed_service_classes(s)  # idempotent service-matrix column seed
+        ops.reap_evidence(s)  # drop evidence past its retention window
     finally:
         s.close()
     yield
 
 
 app = FastAPI(title="chAIn", version="0.0.1", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _optional_token_auth(request, call_next):
+    """If CHAIN_UI_TOKEN is set, require it (header or ?token=); else open (default)."""
+    from fastapi.responses import JSONResponse
+
+    token = settings.ui_auth_token
+    if token and request.url.path != "/health":
+        supplied = request.headers.get("x-chain-token") or request.query_params.get("token")
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            supplied = supplied or auth[7:]
+        if supplied != token:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 class TargetIn(BaseModel):
@@ -81,12 +105,31 @@ def health():
     return {"status": "ok", "version": app.version}
 
 
+@app.get("/preflight")
+def preflight():
+    return ops.tool_preflight()
+
+
+# Serve the built React SPA at /app when present (built by `npm run build` in web/);
+# the no-build static page at / is always the fallback.
+_SPA_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web", "dist")
+if os.path.isdir(_SPA_DIST):
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/app", StaticFiles(directory=_SPA_DIST, html=True), name="spa")
+
+
 @app.get("/targets/list")
 def list_targets():
     s = db.session()
     try:
         return [
-            {"id": t.id, "name": t.name, "authorized": t.authorized}
+            {
+                "id": t.id,
+                "name": t.name,
+                "authorized": t.authorized,
+                "destructive_opt_in": t.destructive_opt_in,
+            }
             for t in s.query(Target).order_by(Target.id).all()
         ]
     finally:
@@ -587,6 +630,194 @@ def export_report(target_id: int, format: str = "json"):
                 export.render_markdown(s, target_id), media_type="text/markdown"
             )
         return export.build_report(s, target_id)
+    finally:
+        s.close()
+
+
+class ImportIn(BaseModel):
+    format: str  # openapi | har
+    content: str
+
+
+@app.post("/targets/{target_id}/import", status_code=201)
+def import_endpoints(target_id: int, body: ImportIn):
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        try:
+            result = import_surface(s, target_id, body.format, body.content)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        audit.record(
+            s, action="import", target_id=target_id,
+            ref=f"{body.format}:{result['endpoints_created']} new",
+        )
+        return result
+    finally:
+        s.close()
+
+
+class CheckJobIn(BaseModel):
+    cell_ids: list[int] | None = None
+
+
+@app.post("/targets/{target_id}/checkjobs", status_code=201)
+def create_check_job(target_id: int, body: CheckJobIn):
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        if not t.authorized:
+            raise HTTPException(status_code=403, detail="target not authorized")
+        job = check_jobs.create_check_job(s, target_id, cell_ids=body.cell_ids)
+        audit.record(s, action="checkjob.create", target_id=target_id, ref=f"tasks={len(job.tasks)}")
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "tasks": [{"id": t.id, "cell_id": t.cell_id, "tool": t.tool, "status": t.status} for t in job.tasks],
+        }
+    finally:
+        s.close()
+
+
+@app.get("/targets/{target_id}/checkjobs/{job_id}")
+def get_check_job(target_id: int, job_id: int):
+    from .models import CheckJob
+
+    s = db.session()
+    try:
+        job = s.get(CheckJob, job_id)
+        if job is None or job.target_id != target_id:
+            raise HTTPException(status_code=404, detail="check job not found")
+        return {
+            "job_id": job.id,
+            "status": job.status,
+            "error": job.error,
+            "tasks": [
+                {"cell_id": t.cell_id, "tool": t.tool, "status": t.status, "note": t.note}
+                for t in job.tasks
+            ],
+        }
+    finally:
+        s.close()
+
+
+@app.post("/targets/{target_id}/service-matrix/generate", status_code=201)
+def generate_service_matrix(target_id: int):
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        created = service_matrix.generate_service_cells(s, target_id)
+        analyzed = service_matrix.analyze_services(s, target_id)
+        audit.record(
+            s, action="service_matrix.generate", target_id=target_id,
+            ref=f"created={created} analyzed={analyzed}",
+        )
+        return {"created": created, "analyzed": analyzed}
+    finally:
+        s.close()
+
+
+@app.get("/targets/{target_id}/service-matrix")
+def get_service_matrix(target_id: int):
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        return service_matrix.get_service_matrix(s, target_id)
+    finally:
+        s.close()
+
+
+@app.patch("/service-cells/{cell_id}")
+def patch_service_cell(cell_id: int, body: CellPatch):
+    s = db.session()
+    try:
+        try:
+            cell = service_matrix.set_service_cell_status(s, cell_id, body.status, reason=body.reason)
+        except matrix_cells.InvalidStatus as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except matrix_cells.ReasonRequired as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        except ValueError:
+            raise HTTPException(status_code=404, detail="service cell not found")
+        audit.record(s, action="service_cell.update", ref=f"cell={cell_id} status={body.status}")
+        return {"id": cell.id, "status": cell.status, "reason": cell.reason}
+    finally:
+        s.close()
+
+
+class SequenceIn(BaseModel):
+    name: str
+    steps: list[dict]
+
+
+@app.post("/targets/{target_id}/sequences", status_code=201)
+def create_sequence(target_id: int, body: SequenceIn):
+    from .models import StepSequence
+
+    s = db.session()
+    try:
+        if s.get(Target, target_id) is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        if not isinstance(body.steps, list) or not body.steps:
+            raise HTTPException(status_code=422, detail="steps must be a non-empty list")
+        seq = StepSequence(target_id=target_id, name=body.name, steps_json=json.dumps(body.steps))
+        s.add(seq)
+        s.commit()
+        audit.record(s, action="sequence.create", target_id=target_id, ref=body.name)
+        return {"id": seq.id, "name": seq.name, "steps": len(body.steps)}
+    finally:
+        s.close()
+
+
+@app.get("/targets/{target_id}/sequences")
+def list_sequences(target_id: int):
+    from .models import StepSequence
+
+    s = db.session()
+    try:
+        rows = s.query(StepSequence).filter_by(target_id=target_id).all()
+        return [{"id": q.id, "name": q.name, "steps": len(json.loads(q.steps_json))} for q in rows]
+    finally:
+        s.close()
+
+
+class SequenceRunIn(BaseModel):
+    host: str | None = None
+
+
+@app.post("/sequences/{seq_id}/run")
+async def run_sequence_endpoint(seq_id: int, body: SequenceRunIn):
+    import httpx
+
+    from .models import Host, StepSequence
+
+    s = db.session()
+    try:
+        seq = s.get(StepSequence, seq_id)
+        if seq is None:
+            raise HTTPException(status_code=404, detail="sequence not found")
+        target = s.get(Target, seq.target_id)
+        if not target.authorized:
+            raise HTTPException(status_code=403, detail="target not authorized")
+        host = body.host
+        if not host:
+            h = s.query(Host).filter_by(target_id=target.id).first()
+            host = (h.hostname or h.ip) if h else "localhost"
+        policy = policy_from_rules(target.scope_rules)
+        profiles = {p.name: p for p in s.query(AuthProfile).filter_by(target_id=target.id).all()}
+        rl = RateLimiter(rps=target.rate_limit_rps, concurrency=target.max_concurrency)
+        async with httpx.AsyncClient(verify=False, timeout=20.0) as client:
+            send_fn = checks_runner.bind_send(policy, client, rate_limiter=rl)
+            run = await seq_runner.run_sequence(
+                s, seq, send_fn=send_fn, auth_profiles=profiles, host=host
+            )
+        audit.record(s, action="sequence.run", target_id=target.id, ref=f"seq={seq_id}")
+        return {"run_id": run.id, "status": run.status, "results": json.loads(run.results_json)}
     finally:
         s.close()
 

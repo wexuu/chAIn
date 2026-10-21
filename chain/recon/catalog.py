@@ -51,6 +51,7 @@ def ingest_nmap(session: Session, target_id: int, records: list, host: str) -> N
                 version=svc.get("version"),
                 banner=svc.get("banner"),
                 is_http=svc.get("is_http", False),
+                scripts=svc.get("scripts"),
             )
 
 

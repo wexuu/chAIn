@@ -44,5 +44,17 @@ class Settings:
     # Per-evidence-blob size cap (bytes); larger blobs are truncated + flagged.
     evidence_max_bytes: int = _env_int("CHAIN_EVIDENCE_MAX_BYTES", 5 * 1024 * 1024)
 
+    # nftables firewall: generator is always available, but rules are only ever
+    # written to the machine when this is explicitly enabled. Default OFF.
+    firewall_apply_enabled: bool = os.environ.get("CHAIN_FIREWALL_APPLY", "").lower() in ("1", "true", "yes")
+
+    # Evidence retention: None = keep until manually purged; else days before reap.
+    evidence_retention_days: int | None = (
+        _env_int("CHAIN_EVIDENCE_RETENTION_DAYS", 0) or None
+    )
+
+    # Optional UI/API token auth. None (default) = open (trusted network).
+    ui_auth_token: str | None = os.environ.get("CHAIN_UI_TOKEN") or None
+
 
 settings = Settings()
