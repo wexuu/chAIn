@@ -46,12 +46,31 @@ export default function Recon({ target }) {
 function StartJob({ target, onStarted }) {
   const catalog = useAsync(() => get('/recon/catalog'), [])
   const preflight = useAsync(() => get('/preflight'), [])
+  const scope = useAsync(() => get(`/targets/${target.id}/scope`), [target.id])
   const [host, setHost] = useState('')
+  const [manual, setManual] = useState(false)
   const [checked, setChecked] = useState(null) // Set of keys, or null until catalog loads
   const { busy, error, run } = useAction()
 
   const tasks = useMemo(() => catalog.data || [], [catalog.data])
   const toolsAvailable = preflight.data?.tools || {}
+
+  // In-scope hosts you can scan directly: allow-rules that name a host or range.
+  const scopeHosts = useMemo(
+    () =>
+      (scope.data || [])
+        .filter((r) => r.allow && (r.kind === 'host' || r.kind === 'cidr'))
+        .map((r) => r.value),
+    [scope.data]
+  )
+
+  // Default the host to the first scope entry; fall back to manual entry when
+  // the scope list is empty.
+  useEffect(() => {
+    if (!scope.data || manual || host) return
+    if (scopeHosts.length) setHost(scopeHosts[0])
+    else setManual(true)
+  }, [scope.data, scopeHosts, manual, host])
 
   // Initialise the checkbox state from each task's default once the catalog loads.
   useEffect(() => {
@@ -90,26 +109,69 @@ function StartJob({ target, onStarted }) {
   return (
     <Panel title="Start recon">
       <form onSubmit={submit} className="stack">
-        <Field label="Host" hint="hostname or IP to scan">
-          <input
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            placeholder="target.example.com / 10.10.11.42"
-            spellCheck={false}
-          />
+        <Field
+          label="Host"
+          hint={manual || scopeHosts.length === 0 ? 'hostname, IP or CIDR' : 'pick from scope'}
+        >
+          {manual || scopeHosts.length === 0 ? (
+            <div className="row">
+              <input
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="target.example.com / 10.10.11.42"
+                spellCheck={false}
+                autoFocus={manual}
+              />
+              {scopeHosts.length > 0 && (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => {
+                    setManual(false)
+                    setHost(scopeHosts[0])
+                  }}
+                  title="pick from the scope list"
+                >
+                  from scope
+                </Button>
+              )}
+            </div>
+          ) : (
+            <select
+              value={host}
+              onChange={(e) => {
+                if (e.target.value === '__custom__') {
+                  setManual(true)
+                  setHost('')
+                } else setHost(e.target.value)
+              }}
+            >
+              {scopeHosts.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+              <option value="__custom__">✎ custom…</option>
+            </select>
+          )}
+          {scopeHosts.length === 0 && !scope.loading && (
+            <span className="muted tiny">
+              no in-scope hosts yet — add one on the Scope tab, or type one here.
+            </span>
+          )}
         </Field>
 
         <div className="checklist-head">
           <span className="field-label">Tasks</span>
           <div className="preset-row">
-            <button type="button" className="link-btn" onClick={() => preset((t) => t.tier === 'quick')}>
-              quick
+            <button type="button" className="preset-btn" onClick={() => preset((t) => t.tier === 'quick')}>
+              Quick
             </button>
-            <button type="button" className="link-btn" onClick={() => preset(() => true)}>
-              all
+            <button type="button" className="preset-btn" onClick={() => preset(() => true)}>
+              All
             </button>
-            <button type="button" className="link-btn" onClick={() => preset(() => false)}>
-              none
+            <button type="button" className="preset-btn" onClick={() => preset(() => false)}>
+              None
             </button>
           </div>
         </div>

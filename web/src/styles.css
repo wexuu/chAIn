@@ -1043,7 +1043,22 @@ textarea.code,
 }
 .preset-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+}
+.preset-btn {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .link-btn {
   background: none;
