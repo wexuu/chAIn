@@ -1,24 +1,25 @@
-/* chAIn operator console — dark, monospace, no-nonsense. */
+/* chAIn operator console — graphite grey + warm orange. */
 
 :root {
-  --bg: #0b0d10;
-  --bg-1: #111418;
-  --bg-2: #171b21;
-  --bg-3: #1d222a;
-  --line: #2a313b;
-  --line-2: #39424f;
-  --fg: #d7dde5;
-  --fg-dim: #8b95a3;
-  --fg-faint: #5c6675;
-  --accent: #4fd1c5;
-  --accent-2: #5aa6e0;
-  --danger: #e05561;
-  --warn: #d9a441;
-  --ok: #4caf72;
+  --bg: #15181d;
+  --bg-1: #1c2028;
+  --bg-2: #232933;
+  --bg-3: #2c333e;
+  --line: #333b47;
+  --line-2: #454f5d;
+  --fg: #e7eaf0;
+  --fg-dim: #9aa4b3;
+  --fg-faint: #6b7584;
+  --accent: #f6873a;
+  --accent-soft: #3a2614;
+  --accent-2: #e2a65f;
+  --danger: #e36461;
+  --warn: #e0a441;
+  --ok: #57b87a;
 
-  /* cell / status palette */
-  --st-untested: #3a4049;
-  --st-candidate: #d9a441;
+  /* cell / status palette — kept categorically distinct for the matrix legend */
+  --st-untested: #3c444f;
+  --st-candidate: #e0a441;
   --st-confirmed: #e05561;
   --st-tested_negative: #3f9d63;
   --st-not_applicable: #2a2f37;
@@ -26,7 +27,7 @@
 
   --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Fira Code",
     "DejaVu Sans Mono", "Menlo", "Consolas", monospace;
-  --radius: 6px;
+  --radius: 8px;
 }
 
 * {
@@ -86,10 +87,11 @@ a {
   z-index: 20;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 8px 14px;
+  padding: 10px 16px;
   flex-wrap: wrap;
 }
 
@@ -104,9 +106,7 @@ a {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.5px;
-}
-.brand-ai::first-letter {
-  color: var(--fg);
+  color: var(--accent);
 }
 .brand-sub {
   color: var(--fg-faint);
@@ -305,9 +305,13 @@ textarea.code,
 }
 .btn-primary {
   background: var(--accent);
-  color: #06201d;
+  color: #241404;
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: 700;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #ff9550;
+  border-color: #ff9550;
 }
 .btn-danger {
   background: #3a1518;
@@ -725,7 +729,7 @@ textarea.code,
   background: var(--st-not_applicable);
 }
 .cell[data-status="candidate"] {
-  background: #2a2411;
+  background: var(--accent-soft);
 }
 
 /* ---------- misc blocks ---------- */
