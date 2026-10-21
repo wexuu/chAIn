@@ -783,6 +783,30 @@ async def service_default_creds(target_id: int):
         s.close()
 
 
+@app.post("/targets/{target_id}/service-matrix/probe")
+async def probe_service_matrix(target_id: int):
+    import httpx
+
+    from .services import probes as service_probes
+
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        if not t.authorized:
+            raise HTTPException(status_code=403, detail="target not authorized")
+        policy = policy_from_rules(t.scope_rules)
+        rl = RateLimiter(rps=t.rate_limit_rps, concurrency=t.max_concurrency)
+        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+            send_fn = checks_runner.bind_send(policy, client, rate_limiter=rl)
+            result = await service_probes.probe_services(s, target_id, send_fn)
+        audit.record(s, action="service_matrix.probe", target_id=target_id, ref=f"updated={result['updated']}")
+        return result
+    finally:
+        s.close()
+
+
 @app.get("/targets/{target_id}/service-matrix")
 def get_service_matrix(target_id: int):
     s = db.session()

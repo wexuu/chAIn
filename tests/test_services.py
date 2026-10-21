@@ -78,6 +78,31 @@ def test_service_matrix_shape(session):
     assert names == {"mongodb", "redis", "ssh"}  # no web service
 
 
+def test_longtail_nse_rule_nfs(session):
+    t = Target(name="t")
+    session.add(t)
+    session.flush()
+    h = Host(target_id=t.id, hostname="box.htb", ip="10.10.10.7")
+    session.add(h)
+    session.flush()
+    session.add(
+        Service(
+            host_id=h.id, port=2049, name="nfs", is_http=False,
+            scripts_json=json.dumps({"nfs-showmount": "/export *"}),
+        )
+    )
+    session.commit()
+    sm.generate_service_cells(session, t.id)
+    sm.analyze_services(session, t.id)
+    from chain.models import ServiceVulnClass
+
+    nfs = session.query(Service).filter_by(name="nfs").first()
+    unauth = session.query(ServiceVulnClass).filter_by(key="unauth_access").first()
+    cell = session.query(ServiceCell).filter_by(service_id=nfs.id, service_vuln_class_id=unauth.id).first()
+    assert cell.status == "candidate"
+    assert "NFS" in cell.reason
+
+
 def test_service_cell_reason_required(session):
     tid = _host_with_services(session)
     sm.generate_service_cells(session, tid)

@@ -16,11 +16,14 @@ def _services_for_target(session: Session, target_id: int) -> list[Service]:
     host_ids = [h.id for h in session.query(Host).filter_by(target_id=target_id).all()]
     if not host_ids:
         return []
-    return (
-        session.query(Service)
-        .filter(Service.host_id.in_(host_ids), Service.is_http == False)  # noqa: E712
-        .all()
-    )
+    # Include a service if it profiles to a catalog entry (by name or port) — this
+    # keeps plain web apps out but pulls in HTTP-fronted infra APIs (ES/Docker/K8s).
+    out = []
+    for svc in session.query(Service).filter(Service.host_id.in_(host_ids)).all():
+        _, classes = catalog.service_profile(svc.name, svc.port)
+        if classes:
+            out.append(svc)
+    return out
 
 
 def _get_cell(session, service_id, vc_id):
@@ -31,7 +34,7 @@ def generate_service_cells(session: Session, target_id: int) -> int:
     classes = {c.key: c for c in session.query(ServiceVulnClass).all()}
     created = 0
     for svc in _services_for_target(session, target_id):
-        applicable = catalog.applicable_classes(svc.name)
+        _canon, applicable = catalog.service_profile(svc.name, svc.port)
         if not applicable:
             continue
         for key, vc in classes.items():
