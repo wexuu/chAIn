@@ -151,7 +151,7 @@ if os.path.isdir(_SPA_DIST):
 
 
 @app.get("/targets/list")
-def list_targets():
+def list_targets(archived: bool = False):
     s = db.session()
     try:
         return [
@@ -160,9 +160,13 @@ def list_targets():
                 "name": t.name,
                 "address": t.address,
                 "authorized": t.authorized,
+                "archived": t.archived,
                 "destructive_opt_in": t.destructive_opt_in,
             }
-            for t in s.query(Target).order_by(Target.id).all()
+            for t in s.query(Target)
+            .filter(Target.archived == archived)
+            .order_by(Target.id)
+            .all()
         ]
     finally:
         s.close()
@@ -216,6 +220,97 @@ def create_target(body: TargetIn):
             s.commit()
         audit.record(s, action="target.create", target_id=t.id, ref=t.name)
         return {"id": t.id, "name": t.name, "address": t.address, "authorized": t.authorized}
+    finally:
+        s.close()
+
+
+@app.post("/targets/{target_id}/archive")
+def archive_target(target_id: int):
+    return _set_archived(target_id, True)
+
+
+@app.post("/targets/{target_id}/restore")
+def restore_target(target_id: int):
+    return _set_archived(target_id, False)
+
+
+def _set_archived(target_id: int, archived: bool):
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        t.archived = archived
+        s.commit()
+        audit.record(s, action="target.archive" if archived else "target.restore", target_id=t.id)
+        return {"id": t.id, "name": t.name, "archived": t.archived}
+    finally:
+        s.close()
+
+
+@app.delete("/targets/{target_id}")
+def delete_target(target_id: int):
+    """Permanently delete a target and everything scoped to it."""
+    from .models import (
+        Attempt,
+        AuthProfile,
+        CheckJob,
+        CheckTask,
+        CoverageCell,
+        Edge,
+        Endpoint,
+        Evidence,
+        Finding,
+        Host,
+        Hypothesis,
+        ReconJob,
+        ReconTask,
+        Request,
+        ScopeRule,
+        SequenceRun,
+        Service,
+        ServiceCell,
+        StepSequence,
+        Subdomain,
+    )
+
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        host_ids = [r[0] for r in s.query(Host.id).filter_by(target_id=target_id)]
+        ep_ids = [r[0] for r in s.query(Endpoint.id).filter_by(target_id=target_id)]
+        svc_ids = (
+            [r[0] for r in s.query(Service.id).filter(Service.host_id.in_(host_ids))]
+            if host_ids
+            else []
+        )
+        cell_ids = (
+            [r[0] for r in s.query(CoverageCell.id).filter(CoverageCell.endpoint_id.in_(ep_ids))]
+            if ep_ids
+            else []
+        )
+
+        def wipe(q):
+            q.delete(synchronize_session=False)
+
+        if cell_ids:
+            wipe(s.query(Attempt).filter(Attempt.cell_id.in_(cell_ids)))
+            wipe(s.query(CoverageCell).filter(CoverageCell.id.in_(cell_ids)))
+        if svc_ids:
+            wipe(s.query(ServiceCell).filter(ServiceCell.service_id.in_(svc_ids)))
+            wipe(s.query(Service).filter(Service.id.in_(svc_ids)))
+        for Model in (
+            CheckTask, SequenceRun, ReconTask, CheckJob, ReconJob, Endpoint, Host, Subdomain,
+            ScopeRule, AuthProfile, Evidence, Request, Edge, Hypothesis, Finding, StepSequence,
+        ):
+            wipe(s.query(Model).filter_by(target_id=target_id))
+        name = t.name
+        s.delete(t)
+        audit.record(s, action="target.delete", ref=name)
+        s.commit()
+        return {"deleted": target_id, "name": name}
     finally:
         s.close()
 

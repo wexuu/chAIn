@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { get, post } from '../api.js'
+import { api, get, post } from '../api.js'
 import { Button, Empty, ErrorText, Field, Panel, TabIntro, useAction, useAsync } from '../ui.jsx'
 
 const SCOPE_KINDS = ['host', 'cidr', 'url_prefix']
@@ -121,6 +121,17 @@ function Machine({ target, onChanged }) {
     await run(() => post(`/targets/${target.id}/address`, { address: address.trim() }))
     onChanged()
   }
+  const archive = () =>
+    run(async () => {
+      await post(`/targets/${target.id}/archive`)
+      onChanged()
+    })
+  const remove = () =>
+    run(async () => {
+      if (!window.confirm(`Delete "${target.name}" and all its data? This cannot be undone.`)) return
+      await api(`/targets/${target.id}`, { method: 'DELETE' })
+      onChanged()
+    })
   return (
     <Panel title="Machine address">
       <p className="muted help">
@@ -137,6 +148,17 @@ function Machine({ target, onChanged }) {
           save
         </Button>
       </form>
+      <div className="danger-row">
+        <span className="muted tiny">put this machine aside, or remove it entirely:</span>
+        <div className="row">
+          <Button variant="ghost" type="button" disabled={busy} onClick={archive}>
+            archive
+          </Button>
+          <Button variant="danger" type="button" disabled={busy} onClick={remove}>
+            delete
+          </Button>
+        </div>
+      </div>
       <ErrorText error={error} />
     </Panel>
   )

@@ -37,7 +37,7 @@ _Session: sessionmaker | None = None
 # Additive column migrations for DBs created before a column existed. SQLite's
 # create_all only creates missing tables, never alters existing ones.
 _MIGRATIONS: dict[str, list[tuple[str, str]]] = {
-    "targets": [("address", "VARCHAR(255)")],
+    "targets": [("address", "VARCHAR(255)"), ("archived", "BOOLEAN DEFAULT 0")],
 }
 
 

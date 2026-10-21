@@ -686,16 +686,25 @@ textarea.code,
 .matrix {
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 11px;
+  font-size: 12.5px;
   min-width: 100%;
 }
 .matrix th,
 .matrix td {
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
-  padding: 4px 6px;
+  padding: 7px 10px;
   text-align: left;
   vertical-align: top;
+}
+.matrix .sticky-col {
+  font-size: 13px;
+}
+.matrix .sticky-col .method {
+  font-size: 11px;
+}
+.matrix .sticky-col .mono-sm {
+  font-size: 13px;
 }
 .matrix thead th {
   position: sticky;
@@ -719,7 +728,8 @@ textarea.code,
   left: 0;
   z-index: 2;
   background: var(--bg-1);
-  max-width: 360px;
+  min-width: 240px;
+  max-width: 460px;
 }
 .matrix thead th.sticky-col.corner {
   z-index: 4;
@@ -1339,11 +1349,11 @@ textarea.code,
 .task-table input[type="checkbox"] {
   width: auto;
 }
-.task-table tr[data-tier="quick"] {
-  background: rgba(246, 135, 58, 0.05);
-}
 .task-table tr[data-tier="thorough"] {
-  background: rgba(246, 135, 58, 0.12);
+  background: rgba(246, 135, 58, 0.14);
+}
+.task-table tr[data-tier="thorough"] td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .task-table tr.row-missing {
   opacity: 0.55;
@@ -1496,6 +1506,42 @@ textarea.code,
 }
 .target-addr {
   font-size: 11px;
+}
+
+/* ---------- archive / danger ---------- */
+.archive-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+.archive-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
 }
 
 /* ---------- responsive ---------- */

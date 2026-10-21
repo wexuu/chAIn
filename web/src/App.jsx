@@ -12,6 +12,7 @@ import Chains from './tabs/Chains.jsx'
 import Sequences from './tabs/Sequences.jsx'
 import ImportTab from './tabs/ImportTab.jsx'
 import Report from './tabs/Report.jsx'
+import Archive from './tabs/Archive.jsx'
 import Preflight from './tabs/Preflight.jsx'
 
 // Tabs are grouped left→right along the workflow: set up the target, discover
@@ -28,6 +29,7 @@ const TABS = [
   { key: 'sequences', label: 'Sequences', Comp: Sequences, group: 'reason' },
   { key: 'import', label: 'Import', Comp: ImportTab, group: 'discover' },
   { key: 'report', label: 'Report', Comp: Report, group: 'report' },
+  { key: 'archive', label: 'Archive', Comp: Archive, group: 'global' },
   { key: 'preflight', label: 'Preflight', Comp: Preflight, group: 'global' },
 ]
 
@@ -93,6 +95,8 @@ function Shell() {
       <main className="content">
         {tab === 'preflight' ? (
           <Preflight />
+        ) : tab === 'archive' ? (
+          <Archive onActiveChanged={targets.reload} />
         ) : tab === 'scope' ? (
           <Scope
             target={selected}

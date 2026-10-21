@@ -27,6 +27,8 @@ class Target(Base):
     # The machine this target is: an IP, hostname, or CIDR. Drives the default
     # recon host and the auto-created scope rules.
     address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Archived targets are hidden from the main list but kept for later review.
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
 
     # Authorization is an ATTESTATION, not verification — see the plan.
