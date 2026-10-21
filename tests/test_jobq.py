@@ -1,6 +1,5 @@
 import asyncio
 
-import pytest
 
 from chain import db, jobq
 from chain.models import ReconJob, ScopeRule, Target

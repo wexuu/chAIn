@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from . import audit, cvss, db, export, jobq, ops
+from . import audit, cvss, db, export, findings, jobq, ops
 from .chains import graph as chains_graph
 from .import_ import import_surface
 from .checks import jobs as check_jobs
@@ -618,6 +618,30 @@ def create_finding(target_id: int, body: FindingIn):
         return {"id": f.id, "title": f.title, "cvss_score": f.cvss_score, "severity": f.severity}
     finally:
         s.close()
+
+
+def _promote(make) -> dict:
+    s = db.session()
+    try:
+        try:
+            f = make(s)
+        except ValueError as exc:
+            code = 404 if "not found" in str(exc) else 409
+            raise HTTPException(status_code=code, detail=str(exc))
+        audit.record(s, action="finding.promote", target_id=f.target_id, ref=f.title)
+        return {"id": f.id, "title": f.title, "cvss_score": f.cvss_score, "severity": f.severity}
+    finally:
+        s.close()
+
+
+@app.post("/cells/{cell_id}/promote-finding", status_code=201)
+def promote_cell_finding(cell_id: int):
+    return _promote(lambda s: findings.promote_cell(s, cell_id))
+
+
+@app.post("/hypotheses/{hyp_id}/promote-finding", status_code=201)
+def promote_hypothesis_finding(hyp_id: int):
+    return _promote(lambda s: findings.promote_hypothesis(s, hyp_id))
 
 
 @app.get("/targets/{target_id}/export")
