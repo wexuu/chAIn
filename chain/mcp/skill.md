@@ -1,6 +1,7 @@
 # chAIn agent skill (MCP)
 
 > Draft, functional. The owner refines/publishes any user-facing version.
+> **Full playbook:** see `AGENT_GUIDE.md` (the loop, rules, chaining, worked example).
 
 chAIn is an **authorized-pentest** coverage + chaining tracker. You operate *on*
 the project over MCP. You are an analyst/sparring partner, not an autonomous
