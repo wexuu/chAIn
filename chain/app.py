@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from . import audit, cvss, db, export, ops
+from . import audit, cvss, db, export, jobq, ops
 from .chains import graph as chains_graph
 from .import_ import import_surface
 from .checks import jobs as check_jobs
@@ -55,7 +55,9 @@ async def lifespan(app: FastAPI):
         ops.reap_evidence(s)  # drop evidence past its retention window
     finally:
         s.close()
+    jobq.start()  # background worker that drains queued recon/check jobs
     yield
+    await jobq.stop()
 
 
 app = FastAPI(title="chAIn", version="0.0.1", lifespan=lifespan)
@@ -236,8 +238,7 @@ def start_recon(target_id: int, body: ReconIn):
             raise HTTPException(status_code=403, detail="target not authorized")
         job = worker.create_job(s, target_id, body.tier, keys=body.keys, target_host=body.host)
         audit.record(s, action="recon.create", target_id=target_id, ref=f"{body.tier}:{body.host}")
-        # Execution is dispatched to the worker (needs the recon tools installed on
-        # the VM); created here in a queued state. See worker.run_job.
+        jobq.submit("recon", job.id)  # background worker runs it
         return {
             "job_id": job.id,
             "tier": job.tier,
@@ -673,6 +674,7 @@ def create_check_job(target_id: int, body: CheckJobIn):
             raise HTTPException(status_code=403, detail="target not authorized")
         job = check_jobs.create_check_job(s, target_id, cell_ids=body.cell_ids)
         audit.record(s, action="checkjob.create", target_id=target_id, ref=f"tasks={len(job.tasks)}")
+        jobq.submit("check", job.id)  # background worker runs it
         return {
             "job_id": job.id,
             "status": job.status,

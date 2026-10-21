@@ -4,7 +4,7 @@ trusted VM (markdown/JSON are exports, built later).
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,8 +14,20 @@ from .models import Base
 
 def make_engine(url: str | None = None) -> Engine:
     url = url or f"sqlite:///{settings.db_path}"
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, echo=False, future=True, connect_args=connect_args)
+    is_sqlite = url.startswith("sqlite")
+    connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
+    engine = create_engine(url, echo=False, future=True, connect_args=connect_args)
+    if is_sqlite:
+        # WAL + busy timeout so the background worker and request threads can
+        # write concurrently without "database is locked".
+        @event.listens_for(engine, "connect")
+        def _sqlite_pragmas(dbapi_conn, _record):
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=30000")
+            cur.close()
+
+    return engine
 
 
 _engine: Engine | None = None
