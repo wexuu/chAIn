@@ -4,6 +4,7 @@ import { ToastProvider, useAsync } from './ui.jsx'
 import TargetSelect from './components/TargetSelect.jsx'
 import Scope from './tabs/Scope.jsx'
 import Recon from './tabs/Recon.jsx'
+import Coverage from './tabs/Coverage.jsx'
 import Inventory from './tabs/Inventory.jsx'
 import Matrix from './tabs/Matrix.jsx'
 import ServiceMatrix from './tabs/ServiceMatrix.jsx'
@@ -19,6 +20,7 @@ import Preflight from './tabs/Preflight.jsx'
 const TABS = [
   { key: 'scope', label: 'Scope', Comp: Scope, group: 'setup' },
   { key: 'recon', label: 'Recon', Comp: Recon, group: 'discover' },
+  { key: 'coverage', label: 'Coverage', Comp: Coverage, group: 'cover' },
   { key: 'inventory', label: 'Inventory', Comp: Inventory, group: 'discover' },
   { key: 'matrix', label: 'Matrix', Comp: Matrix, group: 'cover' },
   { key: 'service-matrix', label: 'Services', Comp: ServiceMatrix, group: 'cover' },

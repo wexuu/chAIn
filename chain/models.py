@@ -24,6 +24,9 @@ class Target(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True)
+    # The machine this target is: an IP, hostname, or CIDR. Drives the default
+    # recon host and the auto-created scope rules.
+    address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_now)
 
     # Authorization is an ATTESTATION, not verification — see the plan.

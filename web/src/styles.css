@@ -1327,6 +1327,177 @@ textarea.code,
   min-width: 84px;
 }
 
+/* ---------- recon task table (single list, shaded by tier) ---------- */
+.task-table td {
+  vertical-align: middle;
+}
+.task-table .col-check,
+.task-table .col-imp {
+  width: 1%;
+  white-space: nowrap;
+}
+.task-table input[type="checkbox"] {
+  width: auto;
+}
+.task-table tr[data-tier="quick"] {
+  background: rgba(246, 135, 58, 0.05);
+}
+.task-table tr[data-tier="thorough"] {
+  background: rgba(246, 135, 58, 0.12);
+}
+.task-table tr.row-missing {
+  opacity: 0.55;
+}
+.task-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chip[data-tier="thorough"] {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.tier-note {
+  margin: -2px 0 0;
+}
+.machine-pick {
+  align-items: center;
+}
+.machine-name {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* ---------- coverage dashboard ---------- */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.stat-tile {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-accent {
+  border-color: var(--accent);
+}
+.stat-big {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.1;
+}
+.stat-accent .stat-big {
+  color: var(--accent);
+}
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--fg-dim);
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 32px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-dim);
+}
+.bar-track {
+  height: 8px;
+  background: var(--bg-3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--fg-faint);
+}
+.bar-fill[data-status="untested"] {
+  background: var(--st-untested);
+}
+.bar-fill[data-status="candidate"] {
+  background: var(--st-candidate);
+}
+.bar-fill[data-status="confirmed"] {
+  background: var(--st-confirmed);
+}
+.bar-fill[data-status="tested_negative"] {
+  background: var(--st-tested_negative);
+}
+.bar-fill[data-status="not_applicable"] {
+  background: var(--st-not_applicable);
+}
+.bar-fill[data-status="reviewed"] {
+  background: var(--st-reviewed);
+}
+.bar-val {
+  text-align: right;
+  color: var(--fg);
+}
+
+/* ---------- inventory: add endpoint ---------- */
+.add-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  margin-bottom: 12px;
+}
+.add-endpoint .row > input {
+  flex: 1;
+  min-width: 150px;
+  width: auto;
+}
+.method-select {
+  width: auto;
+  min-width: 92px;
+  flex: 0 0 auto;
+}
+.add-endpoint-note {
+  margin: 0;
+}
+.field-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.target-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  align-items: flex-start;
+}
+.target-addr {
+  font-size: 11px;
+}
+
 /* ---------- responsive ---------- */
 @media (max-width: 820px) {
   .topbar {
@@ -1337,5 +1508,8 @@ textarea.code,
   }
   .tab-grid.two-col {
     grid-template-columns: 1fr;
+  }
+  .bar-row {
+    grid-template-columns: 110px 1fr 28px;
   }
 }

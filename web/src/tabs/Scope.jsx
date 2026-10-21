@@ -19,6 +19,7 @@ export default function Scope({ target, targets, onSelect, onTargetChanged }) {
         <Targets targets={targets} selectedId={target?.id} onSelect={onSelect} />
         {target ? (
           <>
+            <Machine key={`m${target.id}`} target={target} onChanged={onTargetChanged} />
             <Authorize target={target} onChanged={onTargetChanged} />
             <Destructive target={target} />
             <ScopeRules target={target} />
@@ -35,6 +36,7 @@ export default function Scope({ target, targets, onSelect, onTargetChanged }) {
 }
 
 function Targets({ targets, selectedId, onSelect }) {
+  const [address, setAddress] = useState('')
   const [name, setName] = useState('')
   const { busy, error, run } = useAction()
   const list = targets.data || []
@@ -42,24 +44,31 @@ function Targets({ targets, selectedId, onSelect }) {
   const create = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
-    const t = await run(() => post('/targets', { name: name.trim() }))
+    const t = await run(() =>
+      post('/targets', { name: name.trim(), address: address.trim() || null })
+    )
     setName('')
+    setAddress('')
     targets.reload()
     if (t && t.id != null) onSelect(t.id)
   }
 
   return (
     <Panel
-      title="Targets"
+      title="Machines"
       actions={
         <Button variant="ghost" onClick={targets.reload} title="refresh">
           ⟳
         </Button>
       }
     >
+      <p className="muted help">
+        A target is one machine: its IP or hostname, plus a name you choose (e.g. the HTB box
+        name). The address auto-populates the scope rules so recon can launch.
+      </p>
       <ErrorText error={targets.error} />
       {list.length === 0 ? (
-        <Empty>no targets yet — create one below</Empty>
+        <Empty>no machines yet — add one below</Empty>
       ) : (
         <ul className="target-list">
           {list.map((t) => (
@@ -68,7 +77,10 @@ function Targets({ targets, selectedId, onSelect }) {
                 className={`target-row ${t.id === selectedId ? 'target-row-active' : ''}`}
                 onClick={() => onSelect(t.id)}
               >
-                <span className="target-name">{t.name}</span>
+                <span className="target-main">
+                  <span className="target-name">{t.name}</span>
+                  <span className="mono-sm muted target-addr">{t.address || 'no address'}</span>
+                </span>
                 <span className={`chip ${t.authorized ? 'chip-ok' : 'chip-warn'}`}>
                   {t.authorized ? 'authz' : 'unauthz'}
                 </span>
@@ -77,15 +89,52 @@ function Targets({ targets, selectedId, onSelect }) {
           ))}
         </ul>
       )}
-      <form className="row create-row" onSubmit={create}>
+      <form className="stack create-row" onSubmit={create}>
+        <div className="row wrap">
+          <input
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="IP / hostname / CIDR  (e.g. 10.10.11.42)"
+            spellCheck={false}
+          />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="name  (e.g. HTB Management)"
+            spellCheck={false}
+          />
+          <Button variant="primary" type="submit" disabled={busy || !name.trim()}>
+            add machine
+          </Button>
+        </div>
+      </form>
+      <ErrorText error={error} />
+    </Panel>
+  )
+}
+
+function Machine({ target, onChanged }) {
+  const [address, setAddress] = useState(target.address || '')
+  const { busy, error, run } = useAction()
+  const save = async (e) => {
+    e.preventDefault()
+    await run(() => post(`/targets/${target.id}/address`, { address: address.trim() }))
+    onChanged()
+  }
+  return (
+    <Panel title="Machine address">
+      <p className="muted help">
+        The IP or hostname recon scans by default. Changing it adds the matching allow scope rules.
+      </p>
+      <form className="row" onSubmit={save}>
         <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="new target name (e.g. acme-prod)"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="10.10.11.42 / box.htb"
           spellCheck={false}
         />
-        <Button variant="primary" type="submit" disabled={busy || !name.trim()}>
-          create
+        <Button variant="primary" type="submit" disabled={busy}>
+          save
         </Button>
       </form>
       <ErrorText error={error} />

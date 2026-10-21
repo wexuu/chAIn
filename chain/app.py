@@ -81,12 +81,26 @@ async def _optional_token_auth(request, call_next):
 
 class TargetIn(BaseModel):
     name: str
+    address: str | None = None
+
+
+class AddressIn(BaseModel):
+    address: str
 
 
 class ScopeRuleIn(BaseModel):
     kind: str  # host | cidr | url_prefix
     value: str
     allow: bool = True
+
+
+class EndpointIn(BaseModel):
+    method: str = "GET"
+    path: str  # a path or a full URL; query string is parsed out by the caller
+    params: list[str] | None = None  # query-param NAMES (not values)
+    body_fields: list[str] | None = None  # body field NAMES (e.g. JSON keys)
+    host_id: int | None = None
+    notes: str | None = None
 
 
 class AuthorizeIn(BaseModel):
@@ -144,6 +158,7 @@ def list_targets():
             {
                 "id": t.id,
                 "name": t.name,
+                "address": t.address,
                 "authorized": t.authorized,
                 "destructive_opt_in": t.destructive_opt_in,
             }
@@ -153,12 +168,40 @@ def list_targets():
         s.close()
 
 
+def _autoscope(s, target_id: int, address: str) -> None:
+    """Add the allow-rules that make `address` scannable and reachable.
+
+    A host rule makes the recon launch gate pass (it checks the host string with
+    ip=None); for an IP we also add a /32 (or /128) allow-cidr so the egress
+    default-block set is overridden at request time (e.g. HTB's 10.10.x).
+    """
+    import ipaddress
+
+    address = (address or "").strip()
+    if not address:
+        return
+    existing = {(r.kind, r.value) for r in s.query(ScopeRule).filter_by(target_id=target_id).all()}
+    wanted: list[tuple[str, str]] = []
+    if "/" in address:  # CIDR
+        wanted += [("cidr", address), ("host", address)]
+    else:
+        try:
+            ip = ipaddress.ip_address(address)
+            wanted += [("host", address), ("cidr", f"{address}/{32 if ip.version == 4 else 128}")]
+        except ValueError:  # hostname
+            wanted.append(("host", address))
+    for kind, value in wanted:
+        if (kind, value) not in existing:
+            s.add(ScopeRule(target_id=target_id, kind=kind, value=value, allow=True))
+
+
 @app.post("/targets", status_code=201)
 def create_target(body: TargetIn):
     s = db.session()
     try:
         t = Target(
             name=body.name,
+            address=(body.address or None),
             rate_limit_rps=settings.default_rate_rps,
             max_concurrency=settings.default_concurrency,
         )
@@ -168,8 +211,28 @@ def create_target(body: TargetIn):
         except Exception:
             s.rollback()
             raise HTTPException(status_code=409, detail="target name already exists")
+        if t.address:
+            _autoscope(s, t.id, t.address)
+            s.commit()
         audit.record(s, action="target.create", target_id=t.id, ref=t.name)
-        return {"id": t.id, "name": t.name, "authorized": t.authorized}
+        return {"id": t.id, "name": t.name, "address": t.address, "authorized": t.authorized}
+    finally:
+        s.close()
+
+
+@app.post("/targets/{target_id}/address")
+def set_target_address(target_id: int, body: AddressIn):
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        t.address = body.address.strip() or None
+        if t.address:
+            _autoscope(s, t.id, t.address)
+        s.commit()
+        audit.record(s, action="target.address", target_id=t.id, ref=t.address or "")
+        return {"id": t.id, "name": t.name, "address": t.address}
     finally:
         s.close()
 
@@ -328,10 +391,80 @@ def get_inventory(target_id: int):
                 for h in hosts
             ],
             "endpoints": [
-                {"id": e.id, "method": e.method, "path": e.path, "source": e.source}
+                {
+                    "id": e.id,
+                    "method": e.method,
+                    "path": e.path,
+                    "source": e.source,
+                    "host_id": e.host_id,
+                    "params": json.loads(e.params_json) if e.params_json else [],
+                    "body_fields": json.loads(e.body_fields_json) if e.body_fields_json else [],
+                    "notes": e.notes,
+                }
                 for e in endpoints
             ],
         }
+    finally:
+        s.close()
+
+
+_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
+
+@app.post("/targets/{target_id}/endpoints", status_code=201)
+def add_endpoint(target_id: int, body: EndpointIn):
+    """Manually catalog an endpoint as you discover it.
+
+    We store the method, path, and the NAMES of query params and body fields —
+    not a raw sample request. That's what the matrix uses to spin up
+    param-specific test cells, and what an agent needs to synthesise requests;
+    a whole captured request would be brittle and redundant.
+    """
+    method = (body.method or "GET").upper()
+    if method not in _HTTP_METHODS:
+        raise HTTPException(status_code=422, detail=f"method must be one of {sorted(_HTTP_METHODS)}")
+    import ipaddress
+
+    s = db.session()
+    try:
+        t = s.get(Target, target_id)
+        if t is None:
+            raise HTTPException(status_code=404, detail="target not found")
+        host_id = body.host_id
+        if host_id is None:
+            h = s.query(Host).filter_by(target_id=target_id).first()
+            if h is None and t.address and "/" not in t.address:
+                try:
+                    ipaddress.ip_address(t.address)
+                    h = inventory.upsert_host(s, target_id, ip=t.address)
+                except ValueError:
+                    h = inventory.upsert_host(s, target_id, hostname=t.address)
+                s.flush()
+            host_id = h.id if h else None
+        elif s.get(Host, host_id) is None:
+            raise HTTPException(status_code=422, detail="host_id not found")
+        # Lift query-param names out of the path so a raw ?a=1&b=2 is captured
+        # even when the caller didn't split it out.
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(body.path)
+        q_keys = list(parse_qs(parts.query).keys())
+        params = sorted(set((body.params or []) + q_keys)) or None
+        ep = inventory.upsert_endpoint(
+            s,
+            target_id,
+            method=method,
+            path=parts.path or body.path,
+            host_id=host_id,
+            source="manual",
+            params=params,
+            body_fields=body.body_fields or None,
+        )
+        if body.notes:
+            ep.notes = body.notes.strip() or None
+        s.commit()
+        audit.record(s, action="endpoint.add", target_id=target_id, ref=f"{method} {ep.path}")
+        return {"id": ep.id, "method": ep.method, "path": ep.path, "source": ep.source}
     finally:
         s.close()
 
