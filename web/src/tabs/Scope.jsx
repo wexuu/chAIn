@@ -39,6 +39,7 @@ function Targets({ targets, selectedId, onSelect }) {
   const [address, setAddress] = useState('')
   const [name, setName] = useState('')
   const { busy, error, run } = useAction()
+  const row = useAction()
   const list = targets.data || []
 
   const create = async (e) => {
@@ -53,6 +54,18 @@ function Targets({ targets, selectedId, onSelect }) {
     if (t && t.id != null) onSelect(t.id)
   }
 
+  const archive = (t) =>
+    row.run(async () => {
+      await post(`/targets/${t.id}/archive`)
+      targets.reload()
+    })
+  const remove = (t) =>
+    row.run(async () => {
+      if (!window.confirm(`Delete "${t.name}" and all its data? This cannot be undone.`)) return
+      await api(`/targets/${t.id}`, { method: 'DELETE' })
+      targets.reload()
+    })
+
   return (
     <Panel
       title="Machines"
@@ -66,25 +79,45 @@ function Targets({ targets, selectedId, onSelect }) {
         A target is one machine: its IP or hostname, plus a name you choose (e.g. the HTB box
         name). The address auto-populates the scope rules so recon can launch.
       </p>
-      <ErrorText error={targets.error} />
+      <ErrorText error={targets.error || row.error} />
       {list.length === 0 ? (
         <Empty>no machines yet — add one below</Empty>
       ) : (
         <ul className="target-list">
           {list.map((t) => (
-            <li key={t.id}>
+            <li key={t.id} className="machine-row">
               <button
-                className={`target-row ${t.id === selectedId ? 'target-row-active' : ''}`}
+                className={`machine-select ${t.id === selectedId ? 'machine-select-active' : ''}`}
                 onClick={() => onSelect(t.id)}
               >
-                <span className="target-main">
-                  <span className="target-name">{t.name}</span>
-                  <span className="mono-sm muted target-addr">{t.address || 'no address'}</span>
-                </span>
-                <span className={`chip ${t.authorized ? 'chip-ok' : 'chip-warn'}`}>
-                  {t.authorized ? 'authz' : 'unauthz'}
-                </span>
+                <span className="target-name">{t.name}</span>
+                <span className="mono-sm muted target-addr">{t.address || 'no address'}</span>
               </button>
+              <div className="machine-boxes">
+                <span
+                  className="sqbox"
+                  data-authz={t.authorized ? 'yes' : 'no'}
+                  title={t.authorized ? 'authorized' : 'not authorized'}
+                >
+                  {t.authorized ? 'A' : 'U'}
+                </span>
+                <button
+                  className="sqbox sqbox-btn"
+                  title="archive"
+                  disabled={row.busy}
+                  onClick={() => archive(t)}
+                >
+                  ⇩
+                </button>
+                <button
+                  className="sqbox sqbox-btn danger"
+                  title="delete"
+                  disabled={row.busy}
+                  onClick={() => remove(t)}
+                >
+                  ✕
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -121,21 +154,11 @@ function Machine({ target, onChanged }) {
     await run(() => post(`/targets/${target.id}/address`, { address: address.trim() }))
     onChanged()
   }
-  const archive = () =>
-    run(async () => {
-      await post(`/targets/${target.id}/archive`)
-      onChanged()
-    })
-  const remove = () =>
-    run(async () => {
-      if (!window.confirm(`Delete "${target.name}" and all its data? This cannot be undone.`)) return
-      await api(`/targets/${target.id}`, { method: 'DELETE' })
-      onChanged()
-    })
   return (
     <Panel title="Machine address">
       <p className="muted help">
         The IP or hostname recon scans by default. Changing it adds the matching allow scope rules.
+        Archive or delete this machine from the Machines list.
       </p>
       <form className="row" onSubmit={save}>
         <input
@@ -148,17 +171,6 @@ function Machine({ target, onChanged }) {
           save
         </Button>
       </form>
-      <div className="danger-row">
-        <span className="muted tiny">put this machine aside, or remove it entirely:</span>
-        <div className="row">
-          <Button variant="ghost" type="button" disabled={busy} onClick={archive}>
-            archive
-          </Button>
-          <Button variant="danger" type="button" disabled={busy} onClick={remove}>
-            delete
-          </Button>
-        </div>
-      </div>
       <ErrorText error={error} />
     </Panel>
   )

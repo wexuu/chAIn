@@ -49,8 +49,9 @@ function Shell() {
   const list = targets.data || []
   const selected = list.find((t) => t.id === selectedId) || null
 
-  // Auto-select the first target once loaded.
-  if (!selected && list.length > 0 && selectedId == null) {
+  // Auto-select the first target once loaded, and re-select if the current one
+  // disappears (archived / deleted).
+  if (!selected && list.length > 0) {
     setSelectedId(list[0].id)
   }
 
