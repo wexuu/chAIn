@@ -13,7 +13,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
 from . import audit, cve, cvss, db, export, findings, jobq, ops
@@ -93,13 +93,9 @@ class AuthorizeIn(BaseModel):
     note: str
 
 
-_INDEX_HTML = os.path.join(os.path.dirname(__file__), "static", "index.html")
-
-
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def index():
-    with open(_INDEX_HTML, encoding="utf-8") as fh:
-        return fh.read()
+    return RedirectResponse(url="/app/")
 
 
 @app.get("/health")

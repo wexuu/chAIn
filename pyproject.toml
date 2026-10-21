@@ -30,4 +30,4 @@ build-backend = "setuptools.build_meta"
 include = ["chain*"]
 
 [tool.setuptools.package-data]
-chain = ["static/*.html", "mcp/*.md"]
+chain = ["mcp/*.md"]

@@ -13,11 +13,10 @@ def client(tmp_path):
         yield c
 
 
-def test_index_served(client):
-    r = client.get("/")
-    assert r.status_code == 200
-    assert "chAIn" in r.text
-    assert "Coverage matrix" in r.text
+def test_index_redirects_to_app(client):
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code in (307, 308)
+    assert r.headers["location"] == "/app/"
 
 
 def test_targets_list(client):
